@@ -2,179 +2,138 @@
 
 [English](./README.md) | 简体中文
 
-Keel 是一个中文优先的本地控制台，只管理一台已配置的 Google Compute Engine 虚拟机。它仅使用 Python 标准库和本地 HTML／CSS／JavaScript。主控制台不是多实例管理器、账单面板、部署工具、代理安装器或后台服务；可选的独立 ssmanager 采集器可提供设备流量视图，且不会创建 GCP 资源。
+Keel 是一个中文优先的本地控制台，用于管理一台现有 Google Compute Engine 虚拟机，并提供 Outline Shadowsocks、Prometheus 与 Grafana 的离线生成器。项目仅使用 Python 标准库和本地 HTML／CSS／JavaScript，不负责主机开通、网络部署、代理安装、订阅抓取、用户认证或控制平面。
 
 ## 前置条件
 
-- Python 3.9 或更高版本，无需安装 pip 依赖。
-- 已安装 Google Cloud CLI（`gcloud`），并已通过 `gcloud auth login` 登录。
-- 一台现有的 Compute Engine 虚拟机，以及其项目 ID、可用区和实例名。
-- 可访问 Cloud Monitoring 的网络。Monitoring API 和所需权限必须预先配置，Keel 不会启用 API。
+- Python 3.9 或更高版本，无需 pip 依赖。
+- 现有虚拟机及已登录的 `gcloud`，用于状态、指标、启动和停止。
+- 代理主机上由主机负责人另行安装并配置 `outline-ss-server` v1.9 或更高版本、Prometheus、`node_exporter` 和 Grafana。
+- 一个可供 Outline TCP 与 UDP 共用的公网端口。Prometheus、node_exporter 和 Outline 指标地址保持在本机回环地址。
 
-## 配置
+## 生成 Outline 与共享订阅
 
-在 `keel.py` 旁边复制示例文件，然后填写三个必填值：
+从不含真实机密的模板创建私有清单，再把每个占位值替换为不同且密码学安全的 secret：
+
+```bash
+cp deploy/outline/inventory.example.json deploy/outline/inventory.local.json
+chmod 600 deploy/outline/inventory.local.json
+python3 deploy/outline/generate.py \
+  --inventory deploy/outline/inventory.local.json \
+  --output deploy/outline/generated
+```
+
+清单是一个 JSON 对象：
+
+- `host`：服务器的 IPv4、IPv6 或 DNS 主机名，不带协议或路径。
+- `port`：`1` 到 `65535` 的整数，所有设备的 TCP 与 UDP 共用此端口。
+- `devices`：有序的显式设备槽位列表。每槽包含唯一且可打印的 `label`、稳定 `id` 和唯一 `secret`。`id` 长度为 1–64，由小写 ASCII 字母、数字和内部连字符组成，并用作 Outline 的 `access_key`。加密方式为 `chacha20-ietf-poly1305`。
+
+清单必须是没有符号链接的本地文件，且组用户和其他用户无任何权限。生成器拒绝重复的 ID、标签或 secret，绝不打印 secret 值。它创建权限为 `0700` 的输出目录，并以原子方式替换以下两个确定性、权限为 `0600` 的文件：
+
+- `outline.yml`：v1.9+ 的 `services` → `listeners`／`keys` 配置，TCP 与 UDP 使用同一端口。
+- `clash.yaml`：一个名为 `Keel Outline` 的 `select` 组，每台设备一个命名 SS 节点，以及 `profile.store-selected: true`。没有自动选择组。直连规则指向所配置的服务器以避免 TUN 回环，其他流量使用已选节点。
+
+两个文件均为 JSON 编码的 YAML，相应的 YAML 解析器均可读取。相同输入重复生成的字节完全一致。不得提交或记录私有清单、生成文件或订阅 URL。 使用仅限所有者访问的专用输出目录。同一目录已有生成任务时，第二次写入会被拒绝。
+
+### 所有设备使用同一个 URL
+
+通过主机负责人已有的静态托管，将同一份 `clash.yaml` 发布到一个 HTTPS URL。Keel 有意不提供此 URL 的服务或抓取功能。每台 Clash／Mihomo 设备导入同一订阅，在 `Keel Outline` 中选择自己的命名节点一次，并保留客户端本地配置／缓存，让 `store-selected` 恢复选择。
+
+**安全边界：**每份订阅都包含所有设备的 secret。持有 URL 的任何设备或人员都能读取全部凭据；这不是设备间隔离或单设备吊销机制。请将 URL 视为持有即用的机密，使用不可猜测的路径和已有分发控制；订阅泄漏后应轮换所有已暴露密钥。
+
+## 连接主机服务
+
+以下是供主机负责人使用的真实入口，Keel 不会代为执行：
+
+```bash
+outline-ss-server -config /etc/keel-outline/outline.yml -metrics 127.0.0.1:9091
+node_exporter --web.listen-address=127.0.0.1:9100
+prometheus --config.file=/etc/prometheus/keel.yml \
+  --storage.tsdb.path=/var/lib/prometheus \
+  --web.listen-address=127.0.0.1:9090
+```
+
+将生成的 `outline.yml` 以仅所有者可读的权限安装为 `/etc/keel-outline/outline.yml`，并将 [`prometheus.example.yml`](./deploy/outline/prometheus.example.yml) 复制为 `/etc/prometheus/keel.yml`。抓取示例使用 `127.0.0.1:9091` 的 Outline 指标和 `127.0.0.1:9100` 的 node_exporter，不虚构指标标签。主机防火墙应对所选 Outline 公网端口同时放行 TCP 和 UDP。
+
+对于同主机上的 Grafana，将 [`grafana-datasource.yml`](./deploy/outline/grafana-datasource.yml) 安装到其数据源 provisioning 目录。它创建 UID 为 `keel-prom`、地址为 `http://127.0.0.1:9090` 的 Prometheus 数据源。导入 [`grafana-dashboard.json`](./deploy/outline/grafana-dashboard.json)；仪表盘 UID 为 `keel-outline`，通常路径为 `/d/keel-outline/keel-outline`。远程访问应使用 Grafana 已有登录机制和现有 HTTPS 反向代理；Keel 不增加认证或公网指标监听器。
+
+仪表盘包含：
+
+- 支持 All 和多选的 `device` 变量，取值来自 `access_key`。
+- 使用 `rate(...[$__rate_interval])` 的客户端速率，单位为字节／秒；使用 `increase(...[$__range])` 的所选时间范围估算流量，单位为字节。
+- 仅使用 `shadowsocks_data_bytes` 的 `c>p` 与 `c<p` 方向以及 `tcp` 与 `udp` 协议，按 `access_key`、`dir`、`proto` 分组。排除服务端方向以避免重复计量。 TCP 连接结束时才更新字节计数，长连接的流量可能延后显示为速率峰值。
+- 来自 `up` 的可用性，以及标准 node_exporter 序列提供的 CPU、内存、根文件系统磁盘和每网卡收发速率。网络速率单位为字节／秒，各网卡不求和。
+- 不写死抓取 job 或 instance 值，也不为缺失序列补零；缺失数据保持“无数据”。
+
+## 本地虚拟机控制台
+
+复制并编辑 [`vps.example.json`](./vps.example.json)：
 
 ```bash
 cp vps.example.json vps.local.json
-```
-
-```json
-{
-  "project": "your-gcp-project-id",
-  "zone": "us-central1-a",
-  "instance": "your-vm-instance-name"
-}
-```
-
-`vps.local.json`、常见凭据文件和 Python 缓存均已加入 Git 忽略规则。Keel 不创建服务账号密钥，也不保存访问令牌。配置必须是有效的 UTF-8 JSON。项目、可用区和实例标识符会在启动任何子进程前校验；类似命令选项的名称会被拒绝，普通项目 ID 和旧式域名作用域项目 ID 均可使用。
-
-## 命令行
-
-在仓库根目录运行：
-
-```bash
-python3 keel.py status
-python3 keel.py metrics
-python3 keel.py serve
-python3 keel.py serve --port 8765
-python3 keel.py start --confirm your-vm-instance-name
-python3 keel.py stop --confirm your-vm-instance-name
-```
-
-- `status` 显示状态、可用区、机器类型、启动磁盘大小和公网 IP。
-- `metrics` 输出最近一小时按分钟聚合的 CPU 百分比和出站网络速率（Mbit/s）。
-- `start` 和 `stop` 要求 `--confirm` 完整匹配实例名；缺少该参数或名称不一致时，不会调用操作。
-- 成功仅表示同步 gcloud 命令成功退出，不表示已经观察到目标状态。请运行 `status` 核实实际状态。
-
-## 本地网页控制台
-
-```bash
 python3 keel.py serve
 ```
 
-打开 `http://127.0.0.1:8765`。默认端口为 `8765`，可用 `--port` 修改。服务只绑定 `127.0.0.1`，不会监听所有网卡。服务在前台运行，按 Ctrl+C 退出。
+打开 `http://127.0.0.1:8765`，可用 `--port` 修改端口。服务仅绑定回环地址。中文主页只包含实例状态、项目、可用区、机器类型、启动磁盘、公网 IP、更新时间、刷新以及原有受保护的启动／停止确认。Rust 流量视图和 Cloud Monitoring 图表不属于当前界面。
 
-中文界面提供刷新、真实的启动／停止确认对话框、一小时 SVG 趋势图、空数据与缺失数据状态，以及项目控制台、Monitoring 和固定账单控制台的官方链接。只有 `TERMINATED` 状态可启动，只有 `RUNNING` 状态可停止。每个对话框会显示并固定打开时所见的项目、可用区和实例。服务器会重新加载配置，在调用 gcloud 前拒绝任何目标不匹配，即使其他项目或可用区存在同名实例。操作必须携带每个服务进程独立的会话 CSRF 令牌和同源请求。令牌被拒绝后会清除缓存，并要求重新明确确认，绝不会自动重放操作。非法 `Host` 和跨源请求会被拒绝，以降低 CSRF 与 DNS 重绑定风险。
+`dashboardUrl` 为可选项。它必须是不含 user-info 凭据的 ASCII HTTPS URL；仅当地址为 `localhost` 或 IP 回环地址时才允许 HTTP。不要在 URL 中放入 API 令牌或密码。配置后主页显示一个 Grafana 链接。`/devices` 忽略所有请求参数，以 `Cache-Control: no-store` 重定向到固定的已配置 URL；未配置时重定向到 `/`，因此书签不会形成开放重定向。
 
-主页每次刷新后，紧凑的设备区域会独立请求同源 `/api/traffic?limit=1`。云端或会话错误不会阻止此请求，流量错误也不会影响云端图表。流量请求失败时，旧摘要值会被清除，并显示简短的不可用状态。完整只读视图位于 `/devices`。
-
-## 可选的设备流量
-
-Keel 可以轮询现有 shadowsocks-rust `ssmanager` 的 Unix 数据报 socket，并提供独立的只读设备页面。此功能使用现有流量节点和私有 SQLite 文件，不创建 GCP 虚拟机、服务账号、指标或其他资源，也不启用 API。它不会安装 ssmanager，也不会替换其配置。
-
-### 计量边界
-
-- 管理器的 `stat` 计数器按服务端端口采样。RX 与 TX 已合并求和：Keel 只显示合计字节数和每秒字节数，不拆分方向。
-- 每台物理设备必须拥有自己的服务端端口和专用 Shadowsocks（SS）凭据。共享端口或凭据只能得到共享总量，无法识别各台设备。`shared: true` 会明确标记此类旧共享条目。
-- `totalBytes` 是 Keel 首次观察该端口后累计的监测总量，不是管理器此前历史，也不是 GCP 账单。没有历史回填；缺失样本保持缺失，不会虚构速率。
-- 对一个管理器及其数据库只能运行一个持续采集器（单个 watcher）。不要让多个采集器使用同一管理器映射或 SQLite 文件。
-- 首次观察、采集中断、端口缺失或管理器／计数器重置后，当前速率不可用，直到新的连续样本建立基线。计数回落不会产生负用量。当前速率不可用时仍可保留最后的监测总量；样本过期（默认 30 秒）后同样没有当前速率。
-- 采集器在权限为 `0700` 的状态目录中创建权限为 `0600` 的数据库。`--history` 限制每个端口保留的样本数（默认 `360`，允许范围 `10`–`100000`）。静态映射只含标签，不含凭据、客户端 IP 或客户端主机名。
-
-### 部署到现有流量节点
-
-示例使用以下路径和名称；请根据主机情况一致地修改：
-
-- 代码：`/opt/keel`；映射：`/etc/keel/traffic.json`。
-- 数据库：`/var/lib/keel-traffic/traffic.db`；专用客户端 socket 目录：`/run/keel-traffic`。
-- 现有管理器：`ssmanager.service`，用户和组均为 `ssmanager`，权限为 `0700` 的 Unix socket 位于 `/run/ssmanager/manager.sock`。
-- 只读 Web 监听地址：`127.0.0.1:8766`。
-
-使用现有管理器的非特权账号，不要使用 `root`。请单独配置管理器 socket，不要放宽其 `0700` 权限。两个 Keel 单元有意使用同一账号，以便采集器访问 socket，并让两者访问私有数据库。`RuntimeDirectory=keel-traffic` 和 `RuntimeDirectoryMode=0700` 会创建采集器的专用客户端目录。
-
-从当前检出目录运行以下示例配置命令：
-
-```bash
-sudo install -d -m 0755 /opt/keel /etc/keel
-sudo cp -R keel /opt/keel/
-sudo install -d -m 0700 -o ssmanager -g ssmanager /var/lib/keel-traffic
-sudo install -m 0640 -o root -g ssmanager deploy/traffic.example.json /etc/keel/traffic.json
-sudo install -m 0644 deploy/keel-traffic-collector.service deploy/keel-traffic-view.service /etc/systemd/system/
-sudoedit /etc/keel/traffic.json
-sudo systemctl daemon-reload
-sudo systemctl enable --now keel-traffic-collector.service keel-traffic-view.service
-```
-
-在映射中填写实际的每设备端口和标签；映射不得包含 SS 密码或其他机密。如果管理器账号、单元、socket 或路径不同，请同时修改两个单元文件和映射。采集器仅限 `AF_UNIX` 及其状态／运行目录。查看器仅限 `AF_INET`，无法访问管理器或客户端 Unix socket，并使用 SQLite `mode=ro` 与 `PRAGMA query_only=ON` 打开数据库；systemd 还会以只读方式挂载数据库路径。查看器仅提供 `http://127.0.0.1:8766/devices`，不含实例管理或 gcloud 路由。
-
-### 连接主控制台
-
-从以下两种本机连接方式中选择一种。两种方式中，主控制台都保持在 `127.0.0.1`，只转发只读 `/api/traffic`，不会暴露管理器 socket。
-
-**方式 A：现有本机 HTTP 代理。** 在 `vps.local.json` 中添加 `trafficProxyPort`：
+远程和仅本机配置示例分别为：
 
 ```json
 {
   "project": "your-gcp-project-id",
   "zone": "us-central1-a",
   "instance": "your-vm-instance-name",
-  "trafficProxyPort": 17890
+  "dashboardUrl": "https://grafana.example.com/d/keel-outline/keel-outline"
 }
 ```
 
-此值可选；如果提供，必须是 `1` 到 `65535` 的 JSON 整数。本示例指定监听本机 `17890` 端口的现有 HTTP 代理；Keel 不启动也不配置该代理。Keel 通过 `127.0.0.1:17890` 发送固定上游 `http://192.0.2.80/api/traffic` 的绝对形式请求（附带所请求的 `limit` 查询参数），并设置 `Host: 192.0.2.80`。请配置现有代理和节点路由，使该地址只到达只读监听器。
+```json
+{
+  "project": "your-gcp-project-id",
+  "zone": "us-central1-a",
+  "instance": "your-vm-instance-name",
+  "dashboardUrl": "http://127.0.0.1:3000/d/keel-outline/keel-outline"
+}
+```
 
-手机私有访问地址为 `http://192.0.2.80/devices`。请在手机现有代理客户端中为目标 `192.0.2.80` 添加路由规则，使用该手机自己的专用设备 SS 凭据，不要使用共享凭据或其他设备的凭据。在流量节点上，将 Rust 服务的专用 UID 映射到只读监听器。此路由只应用于设备视图；不要暴露管理器或主控制台。
+只有 `TERMINATED` 状态可启动，只有 `RUNNING` 状态可停止。两者都要求完整实例名、同源请求和每个进程独立的 CSRF 令牌。服务器在调用 gcloud 前重新加载目标配置，绝不自动重放已被拒绝的操作。
 
-在 Debian IPv4 节点上，可用 [专用路由示例](./deploy/ss-private-route.sh) 设置该私有地址，例如以 root 运行 `bash deploy/ss-private-route.sh ssmanager 8766`。参数分别是 Rust 服务的专用非特权账号和只读监听端口。该示例使用 iptables，允许 Google Cloud DNS 并限制该账号访问私网目标；重启后需在 Rust 服务启动前重新应用。首页设备摘要每 10 秒刷新一次，云端 CPU 等查询仍按需刷新。
-
-**方式 B：安全的回环 SSH 转发。** 如果只读查看器监听节点的 `127.0.0.1:8766`，请在运行主控制台的同一台机器上保持以下 SSH 命令运行：
+## 命令行与现有 API
 
 ```bash
-ssh -N -T -o ExitOnForwardFailure=yes \
-  -L 127.0.0.1:18766:127.0.0.1:8766 your-ssh-user@your-vps.example
+python3 keel.py status
+python3 keel.py metrics
+python3 keel.py serve --port 8765
+python3 keel.py start --confirm your-vm-instance-name
+python3 keel.py stop --confirm your-vm-instance-name
 ```
 
-然后在另一个终端启动 Keel：
+`status` 报告当前虚拟机详情。`metrics` 输出最近一小时的 Cloud Monitoring CPU 百分比和出站网络速率，需要已有 Monitoring API、权限和网络访问。尽管主页不再绘制云端图表，`/api/status` 和 `/api/metrics` 仍然保留。启动／停止成功消息仅表示同步 gcloud 命令已退出，不表示已观察到目标状态；请运行 `status` 确认。
 
-```bash
-python3 keel.py serve --traffic-forward-port 18766
-```
-
-此参数将 `/api/traffic` 直接转发到 `127.0.0.1:18766`，并优先于 `trafficProxyPort`。它使用现有 SSH 访问，不增加公网监听器，也不转发管理器 Unix socket。请选择未使用且不同于主控制台 `--port` 的本机端口。如果两种方式都未配置，控制台和设备页面仍可打开，但会报告流量不可用。
-
-## 云端行为与权限
-
-Keel 使用参数数组、显式项目／可用区、捕获输出和有限超时执行以下命令：
-
-```text
-gcloud compute instances describe INSTANCE --project PROJECT --zone ZONE --format json
-gcloud auth print-access-token
-gcloud compute instances start INSTANCE --project PROJECT --zone ZONE --quiet
-gcloud compute instances stop INSTANCE --project PROJECT --zone ZONE --quiet
-```
-
-每个 gcloud 子进程都使用 `stdin=subprocess.DEVNULL`，并在仅作用于该子进程的环境中设置 `CLOUDSDK_CORE_SHOULD_PROMPT_TO_ENABLE_API=false` 和 `CLOUDSDK_CORE_DISABLE_PROMPTS=true`。因此 CLI 和 HTTP 子进程都无法提示输入；Keel 不修改用户的 gcloud 配置或父进程环境。访问令牌仅在内存中用于 Monitoring 请求，不会打印或写入磁盘。云端错误经脱敏后才显示。
-
-已登录身份只需具备所用操作对应的权限：
-
-- `compute.instances.get`：读取状态和发现实例数字 ID。
-- `monitoring.timeSeries.list`：读取指标。
-- `compute.instances.start` 和 `compute.instances.stop`：执行对应操作。
-- `compute.zoneOperations.get`：供同步 gcloud 命令等待操作完成。
-
-读取操作只执行 `describe`、访问令牌获取和带 `view=FULL` 的 Monitoring `timeSeries` GET 请求，不启动云服务、不安装代理、不启用 API。指标使用真实数字实例 ID 和项目过滤，按 60 秒对齐；CPU 使用均值对齐，网络 INT64 `int64Value` DELTA 字节数按 `字节 × 8 ÷ 60 ÷ 1,000,000` 换算。不同网卡序列按时间戳求和，缺失分钟保持缺失，不补零。Monitoring 返回 `executionErrors` 或 `unreachable` 时会显示错误，而不是伪装成完整或空图表。
+现有 `trafficProxyPort` 配置和旧流量 CLI／API 仍为回滚保持解析兼容，但不是当前 Outline 可观测性路径。
 
 ## 费用与边界
 
-启动虚拟机可能产生计算费用。停止虚拟机后，持久磁盘、静态、保留或留存的公网 IP 等资源仍可能计费。临时外部 IPv4 地址可能在虚拟机停止并再次启动后改变。Keel 不显示虚构的账单总额、赠金、配额或实时余额，请通过固定的官方账单控制台链接查询。
+运行中的虚拟机、出站网络流量、持久磁盘以及静态或保留公网 IP 都可能计费。停止虚拟机不一定会停止磁盘或 IP 费用，临时外部 IPv4 地址可能在重启后改变。Outline、Prometheus、Grafana 和 node_exporter 也会消耗主机 CPU、内存、磁盘和网络；保留的 Prometheus 样本会增加存储占用。Keel 不显示虚构账单或配额，请使用云服务商账单控制台。
 
-Keel 不包含遥测、后台守护进程安装、部署自动化、自动启用 API 或远程访问功能。
-
-## 离线测试
+## 离线验证
 
 ```bash
 python3 -m unittest discover -s tests -v
 ```
 
-测试只使用本地伪数据和 mock，不需要 `vps.local.json`、gcloud 登录、网络或真实虚拟机，覆盖指标分页／速率换算、网卡汇总、配置、子进程参数及写操作／Web 安全防护。
+测试只使用本地伪数据、临时文件和回环 HTTP 服务，不需要凭据、gcloud、云资源、外部网络、Outline、Prometheus 或 Grafana。
 
 ## 目录结构
 
-- [`keel.py`](./keel.py)：命令行入口。
-- [`keel/`](./keel/)：配置、gcloud、指标、受保护操作、本地 HTTP 服务及可选流量采集／查看模块。
-- [`keel/static/`](./keel/static/)：无第三方依赖的中文网页控制台和设备流量视图。
-- [`deploy/`](./deploy/)：不含机密的流量映射与 systemd 单元示例。
-- [`tests/`](./tests/)：离线 `unittest` 回归测试。
-- [`vps.example.json`](./vps.example.json)：配置模板。
+- [`keel.py`](./keel.py)：虚拟机命令行入口。
+- [`keel/`](./keel/)：配置、受保护的 gcloud 操作、指标和本地 HTTP 服务。
+- [`keel/static/`](./keel/static/)：精简后的中文控制台。
+- [`deploy/outline/generate.py`](./deploy/outline/generate.py)：离线清单生成器。
+- [`deploy/outline/`](./deploy/outline/)：清单、Prometheus、Grafana 数据源与仪表盘文件。
+- [`tests/`](./tests/)：离线回归测试。
+
+旧 `keel/traffic.py`、`keel/traffic_server.py` 和 `deploy/keel-traffic-*.service` 文件仅供手动旧版回滚；当前界面不链接或宣传这些文件。

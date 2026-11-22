@@ -1,8 +1,10 @@
+import ipaddress
 import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlsplit
 
 from .errors import ConfigError
 
@@ -22,6 +24,38 @@ class Config:
     zone: str
     instance: str
     traffic_proxy_port: Optional[int] = None
+    dashboard_url: Optional[str] = None
+
+
+def _validate_dashboard_url(value):
+    if value is None:
+        return None
+    valid = isinstance(value, str) and 0 < len(value) <= 2048 and value.isascii()
+    if valid:
+        valid = not any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in value)
+    if valid:
+        valid = "\\" not in value
+    try:
+        parsed = urlsplit(value) if valid else None
+        if parsed is not None:
+            parsed.port
+    except ValueError:
+        parsed = None
+    if (
+        parsed is None
+        or parsed.scheme not in {"https", "http"}
+        or not parsed.hostname
+        or "@" in parsed.netloc
+    ):
+        raise ConfigError("dashboardUrl 必须是不含凭据的 HTTPS URL；HTTP 仅允许本机回环地址。")
+    if parsed.scheme == "http":
+        try:
+            loopback = ipaddress.ip_address(parsed.hostname).is_loopback
+        except ValueError:
+            loopback = parsed.hostname == "localhost"
+        if not loopback:
+            raise ConfigError("dashboardUrl 必须是不含凭据的 HTTPS URL；HTTP 仅允许本机回环地址。")
+    return value
 
 
 def default_config_path():
@@ -46,7 +80,7 @@ def load_config(path=None):
     if not isinstance(data, dict):
         raise ConfigError("vps.local.json 必须是 JSON 对象。")
 
-    unknown = set(data) - {"project", "zone", "instance", "trafficProxyPort"}
+    unknown = set(data) - {"project", "zone", "instance", "trafficProxyPort", "dashboardUrl"}
     if unknown:
         raise ConfigError("vps.local.json 含有不支持的配置项。")
 
@@ -67,4 +101,8 @@ def load_config(path=None):
     port = data.get("trafficProxyPort")
     if port is not None and (type(port) is not int or not 1 <= port <= 65535):
         raise ConfigError("trafficProxyPort 必须是 1 到 65535 的本机 HTTP 代理端口。")
-    return Config(**values, traffic_proxy_port=port)
+    return Config(
+        **values,
+        traffic_proxy_port=port,
+        dashboard_url=_validate_dashboard_url(data.get("dashboardUrl")),
+    )

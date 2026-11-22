@@ -45,13 +45,18 @@ class WebGuardTests(unittest.TestCase):
         self.server.server_close()
         self.temp_dir.cleanup()
 
-    def request(self, method, path, body=None, headers=None, details=False, raw=False):
+    def request(
+        self, method, path, body=None, headers=None, details=False, raw=False,
+        include_response=False,
+    ):
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
         self.addCleanup(connection.close)
         connection.request(method, path, body=body, headers=headers or {})
         response = connection.getresponse()
         content = response.read()
         if raw:
+            if include_response:
+                return response.status, content, response
             return response.status, content
         payload = json.loads(content.decode("utf-8"))
         if details:
@@ -189,17 +194,81 @@ class WebGuardTests(unittest.TestCase):
         self.assertNotIn("success", payload)
         self.assertEqual(payload["error"], "cloud_error")
 
-    def test_devices_view_is_available_without_tunnel_or_cloud_access(self):
+    def test_home_is_status_only_and_devices_bookmark_falls_back_home(self):
         status, content = self.request("GET", "/", raw=True)
         self.assertEqual(status, 200)
-        self.assertIn(b'href="/devices"', content)
-        status, content = self.request("GET", "/devices", raw=True)
+        self.assertEqual(content.count(b'href="/devices"'), 1)
+        self.assertIn(b'id="dashboard-link"', content)
+        for removed in (
+            b"cpu-chart", b"network-chart", b"traffic-summary",
+            b"Cloud Monitoring", b"ssmanager", b"/static/devices.js",
+        ):
+            self.assertNotIn(removed, content)
+
+        status, content = self.request("GET", "/static/app.js", raw=True)
         self.assertEqual(status, 200)
-        self.assertIn(b"width=device-width", content)
-        status, payload = self.request("GET", "/api/traffic")
-        self.assertEqual(status, 503)
-        self.assertEqual(payload["error"], "traffic_unavailable")
+        self.assertNotIn(b"/api/metrics", content)
+        self.assertNotIn(b"/api/traffic", content)
+        self.assertIn(b"/api/status", content)
+
+        status, content, response = self.request(
+            "GET", "/devices?url=https%3A%2F%2Fevil.example", raw=True,
+            include_response=True,
+        )
+        self.assertEqual(status, 302)
+        self.assertEqual(response.getheader("Location"), "/")
+        self.assertEqual(response.getheader("Cache-Control"), "no-store")
+        self.assertEqual(content, b"")
         self.cloud.describe.assert_not_called()
+
+    def test_session_provides_dashboard_metadata_despite_gcloud_outage(self):
+        dashboard = "https://grafana.example.com/d/keel-outline/outline?orgId=1"
+        config = json.loads(self.config_path.read_text(encoding="utf-8"))
+        config["dashboardUrl"] = dashboard
+        self.config_path.write_text(json.dumps(config), encoding="utf-8")
+        self.cloud.describe.side_effect = GcloudError("gcloud unavailable")
+
+        status, payload = self.request("GET", "/api/session")
+
+        self.assertEqual(status, 200)
+        self.assertIn("csrfToken", payload)
+        self.assertEqual(payload["links"]["dashboard"], dashboard)
+        self.cloud.describe.assert_not_called()
+        status, payload = self.request("GET", "/api/status")
+        self.assertEqual(status, 502)
+        self.assertEqual(payload["error"], "cloud_error")
+        status, payload = self.request("GET", "/api/session")
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["links"]["dashboard"], dashboard)
+
+    def test_session_still_issues_csrf_token_when_config_is_missing(self):
+        self.config_path.unlink()
+
+        status, payload = self.request("GET", "/api/session")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(set(payload), {"csrfToken"})
+        self.assertTrue(payload["csrfToken"])
+        self.cloud.describe.assert_not_called()
+
+    def test_devices_bookmark_uses_only_validated_configured_dashboard(self):
+        dashboard = "https://grafana.example.com/d/keel-outline/outline?orgId=1"
+        config = json.loads(self.config_path.read_text(encoding="utf-8"))
+        config["dashboardUrl"] = dashboard
+        self.config_path.write_text(json.dumps(config), encoding="utf-8")
+
+        status, _, response = self.request(
+            "GET", "/devices?next=https%3A%2F%2Fevil.example", raw=True,
+            include_response=True,
+        )
+        self.assertEqual(status, 302)
+        self.assertEqual(response.getheader("Location"), dashboard)
+        self.assertEqual(response.getheader("Referrer-Policy"), "no-referrer")
+
+        status, payload = self.request("GET", "/api/status")
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["links"]["dashboard"], dashboard)
+        self.assertEqual(self.cloud.describe.call_count, 1)
 
     def test_proxy_port_must_not_loop_back_into_admin(self):
         cfg = json.loads(self.config_path.read_text())

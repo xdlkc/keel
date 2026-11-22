@@ -1,5 +1,6 @@
 {
   "project": "your-gcp-project-id",
   "zone": "us-central1-a",
-  "instance": "your-vm-instance-name"
+  "instance": "your-vm-instance-name",
+  "dashboardUrl": "https://grafana.example.com/d/keel-outline/keel-outline"
 }

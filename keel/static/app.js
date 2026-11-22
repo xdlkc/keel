@@ -12,7 +12,6 @@ const state = {
 };
 
 const byId = (id) => document.getElementById(id);
-const trafficNumberFormat = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 });
 const statusLabels = {
   PROVISIONING: "准备中",
   STAGING: "启动中",
@@ -57,10 +56,15 @@ async function fetchJson(path, options = {}) {
   return payload;
 }
 
+function renderDashboardLink(data) {
+  byId("dashboard-link").hidden = !(data.links && data.links.dashboard);
+}
+
 async function ensureSession() {
   if (!state.csrfToken) {
     const session = await fetchJson("/api/session");
     state.csrfToken = session.csrfToken;
+    renderDashboardLink(session);
   }
 }
 
@@ -99,6 +103,7 @@ function renderStatus(data) {
   byId("public-ip-value").textContent = data.publicIp || "未配置";
   byId("updated-at-value").textContent = formatTime(data.updatedAt);
   byId("status-text").textContent = statusLabels[state.status] || state.status;
+  renderDashboardLink(data);
 
   const pill = byId("status-pill");
   let statusClass = "status-unknown";
@@ -106,10 +111,6 @@ function renderStatus(data) {
   else if (["TERMINATED", "SUSPENDED"].includes(state.status)) statusClass = "status-stopped";
   else if (["PROVISIONING", "STAGING", "STOPPING", "SUSPENDING", "REPAIRING"].includes(state.status)) statusClass = "status-pending";
   pill.className = `status-pill ${statusClass}`;
-
-  for (const name of ["console", "monitoring", "billing"]) {
-    if (data.links && data.links[name]) byId(`${name}-link`).href = data.links[name];
-  }
   updateActionButtons();
 }
 
@@ -126,247 +127,9 @@ function renderStatusError() {
   updateActionButtons();
 }
 
-function svgElement(name, attributes = {}, text = null) {
-  const element = document.createElementNS("http://www.w3.org/2000/svg", name);
-  for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, value);
-  if (text !== null) element.textContent = text;
-  return element;
-}
-
-function niceCeiling(value) {
-  if (!Number.isFinite(value) || value <= 0) return 1;
-  const exponent = Math.floor(Math.log10(value));
-  const fraction = value / (10 ** exponent);
-  const nice = fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10;
-  return nice * (10 ** exponent);
-}
-
-function drawChart(name, result, unit) {
-  const svg = byId(`${name}-chart`);
-  const empty = byId(`${name}-empty`);
-  const latest = byId(`${name}-latest`);
-  const meta = byId(`${name}-meta`);
-  svg.replaceChildren();
-  latest.textContent = "—";
-
-  const start = Date.parse(result.startTime);
-  const end = Date.parse(result.endTime);
-  const bucketSeconds = result.bucketSeconds;
-  const rawPoints = Array.isArray(result[name]) ? result[name] : [];
-  if (!Number.isFinite(start) || !Number.isFinite(end) || bucketSeconds !== 60 || end <= start) {
-    empty.textContent = "指标时间范围无效";
-    empty.hidden = false;
-    meta.textContent = "无法绘制";
-    return;
-  }
-
-  const values = new Map();
-  for (const point of rawPoints) {
-    const timestamp = Date.parse(point.timestamp);
-    const value = point.value;
-    if (Number.isFinite(timestamp) && typeof value === "number" && Number.isFinite(value) && value >= 0) {
-      values.set(timestamp, value);
-    }
-  }
-  const slots = [];
-  for (let time = start + bucketSeconds * 1000; time <= end; time += bucketSeconds * 1000) {
-    slots.push({ time, value: values.has(time) ? values.get(time) : null });
-  }
-  const available = slots.filter((point) => point.value !== null);
-  meta.textContent = `${available.length} / ${slots.length} 个分钟有数据`;
-  if (!available.length) {
-    empty.textContent = name === "cpu" ? "最近一小时没有 CPU 数据" : "最近一小时没有出站网络数据";
-    empty.hidden = false;
-  } else {
-    empty.hidden = true;
-    const last = available[available.length - 1];
-    latest.textContent = `${last.value.toFixed(unit === "%" ? 2 : 3)} ${unit}`;
-    latest.setAttribute("title", formatTime(new Date(last.time).toISOString()));
-  }
-
-  const width = 640;
-  const height = 220;
-  const margin = { left: 48, right: 12, top: 12, bottom: 30 };
-  const plotWidth = width - margin.left - margin.right;
-  const plotHeight = height - margin.top - margin.bottom;
-  const observedMax = Math.max(0, ...available.map((point) => point.value));
-  const yMax = unit === "%" ? Math.max(10, niceCeiling(observedMax * 1.15)) : niceCeiling(observedMax * 1.15);
-  const x = (index) => margin.left + (slots.length <= 1 ? 0 : index * plotWidth / (slots.length - 1));
-  const y = (value) => margin.top + plotHeight - value / yMax * plotHeight;
-
-  for (let index = 0; index <= 4; index += 1) {
-    const value = yMax * (4 - index) / 4;
-    const lineY = margin.top + plotHeight * index / 4;
-    svg.appendChild(svgElement("line", {
-      x1: margin.left, y1: lineY, x2: width - margin.right, y2: lineY,
-      stroke: "#1d3043", "stroke-width": 1,
-    }));
-    svg.appendChild(svgElement("text", {
-      x: margin.left - 8, y: lineY + 3, fill: "#64798f", "font-size": 9,
-      "text-anchor": "end",
-    }, value >= 100 ? value.toFixed(0) : value >= 10 ? value.toFixed(1) : value.toFixed(2)));
-  }
-
-  const timeFormatter = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
-  const timeLabels = [0, Math.floor((slots.length - 1) / 2), slots.length - 1];
-  for (const index of timeLabels) {
-    if (!slots[index]) continue;
-    svg.appendChild(svgElement("text", {
-      x: x(index), y: height - 7, fill: "#64798f", "font-size": 9,
-      "text-anchor": index === 0 ? "start" : index === slots.length - 1 ? "end" : "middle",
-    }, timeFormatter.format(new Date(slots[index].time))));
-  }
-
-  const color = unit === "%" ? "#38d6c1" : "#6aa9ff";
-  let segment = [];
-  const flushSegment = () => {
-    if (!segment.length) return;
-    const path = segment.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ");
-    if (segment.length > 1) {
-      svg.appendChild(svgElement("path", {
-        d: path, fill: "none", stroke: color, "stroke-width": 2,
-        "stroke-linecap": "round", "stroke-linejoin": "round",
-      }));
-    }
-    for (const point of segment) {
-      const circle = svgElement("circle", {
-        cx: point.x, cy: point.y, r: segment.length === 1 ? 3.5 : 2.2,
-        fill: color, stroke: "#0d1928", "stroke-width": 1,
-      });
-      circle.appendChild(svgElement("title", {}, `${timeFormatter.format(new Date(point.time))} · ${point.value.toFixed(3)} ${unit}`));
-      svg.appendChild(circle);
-    }
-    segment = [];
-  };
-
-  slots.forEach((point, index) => {
-    if (point.value === null) {
-      flushSegment();
-    } else {
-      segment.push({ x: x(index), y: y(point.value), value: point.value, time: point.time });
-    }
-  });
-  flushSegment();
-}
-
-function renderMetrics(result) {
-  drawChart("cpu", result, "%");
-  drawChart("network", result, "Mbit/s");
-}
-
-function renderMetricsError(error) {
-  for (const name of ["cpu", "network"]) {
-    byId(`${name}-chart`).replaceChildren();
-    byId(`${name}-latest`).textContent = "—";
-    byId(`${name}-empty`).textContent = error.code === "not_logged_in" ? "未登录，无法读取指标" : "暂时无法读取指标";
-    byId(`${name}-empty`).hidden = false;
-    byId(`${name}-meta`).textContent = "无可用数据";
-  }
-}
-
-function trafficSummaryElement(tag, className, text) {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
-
-function formatTrafficBytes(value) {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return "—";
-  const units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
-  let scaled = value;
-  let index = 0;
-  while (scaled >= 1024 && index < units.length - 1) {
-    scaled /= 1024;
-    index += 1;
-  }
-  return `${trafficNumberFormat.format(scaled)} ${units[index]}`;
-}
-
-function setTrafficSummaryStatus(message) {
-  const status = byId("traffic-summary-status");
-  status.textContent = message || "";
-  status.hidden = !message;
-}
-
-function renderTrafficSummaryError() {
-  byId("traffic-summary-list").replaceChildren();
-  setTrafficSummaryStatus("设备流量暂不可用。");
-}
-
-function renderTrafficSummary(payload) {
-  if (!payload || !Array.isArray(payload.devices)) throw new Error("invalid traffic payload");
-  const list = byId("traffic-summary-list");
-  list.replaceChildren();
-  const devices = payload.devices.filter((device) => device && typeof device === "object");
-  if (!devices.length) {
-    setTrafficSummaryStatus("暂无设备流量数据。");
-    return;
-  }
-
-  let hasUnavailableRate = false;
-  for (const device of devices) {
-    const port = Number.isInteger(device.port) ? device.port : "—";
-    const label = typeof device.label === "string" && device.label ? device.label : `端口 ${port}`;
-    const card = trafficSummaryElement("article", "traffic-summary-device");
-    card.appendChild(trafficSummaryElement("h3", "", label));
-    card.appendChild(trafficSummaryElement(
-      "p", "traffic-summary-port", `服务端端口 ${port}${device.shared ? " · 旧共享传输" : ""}`,
-    ));
-
-    const numbers = trafficSummaryElement("dl", "traffic-summary-numbers");
-    const rateBlock = trafficSummaryElement("div");
-    rateBlock.appendChild(trafficSummaryElement("dt", "", "当前合计速率（RX + TX）"));
-    const validRate = typeof device.rateBytesPerSecond === "number" &&
-      Number.isFinite(device.rateBytesPerSecond) && device.rateBytesPerSecond >= 0;
-    const rate = trafficSummaryElement(
-      "dd", validRate ? "" : "is-unavailable",
-      validRate ? `${formatTrafficBytes(device.rateBytesPerSecond)}/s` : "暂不可用",
-    );
-    if (!validRate) {
-      hasUnavailableRate = true;
-      rate.title = "当前速率不可用；详见设备页。";
-    }
-    rateBlock.appendChild(rate);
-    numbers.appendChild(rateBlock);
-
-    const totalBlock = trafficSummaryElement("div");
-    totalBlock.appendChild(trafficSummaryElement("dt", "", "监测以来总量"));
-    const validTotal = typeof device.totalBytes === "number" &&
-      Number.isFinite(device.totalBytes) && device.totalBytes >= 0;
-    const total = trafficSummaryElement("dd", validTotal ? "" : "is-unavailable", formatTrafficBytes(device.totalBytes));
-    if (validTotal) total.title = `${device.totalBytes} B`;
-    totalBlock.appendChild(total);
-    numbers.appendChild(totalBlock);
-    card.appendChild(numbers);
-    list.appendChild(card);
-  }
-
-  if (hasUnavailableRate) setTrafficSummaryStatus("部分当前速率不可用；详见设备页。");
-  else if (payload.collector && payload.collector.error) setTrafficSummaryStatus("采集状态异常；详见设备页。");
-  else setTrafficSummaryStatus(null);
-}
-
-let trafficPending = false;
-async function refreshTrafficSummary() {
-  if (document.hidden || trafficPending) return;
-  trafficPending = true;
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 6000);
-  try {
-    renderTrafficSummary(await fetchJson("/api/traffic?limit=1", { signal: controller.signal }));
-  } catch (error) {
-    renderTrafficSummaryError();
-  } finally {
-    window.clearTimeout(timeout);
-    trafficPending = false;
-  }
-}
-
 async function refreshAll(options = {}) {
   if (state.refreshing) return;
   state.refreshing = true;
-  void refreshTrafficSummary();
   updateActionButtons();
   byId("refresh-button").disabled = true;
   byId("refresh-button").classList.add("is-refreshing");
@@ -375,24 +138,9 @@ async function refreshAll(options = {}) {
 
   try {
     await ensureSession();
-    const [statusResult, metricsResult] = await Promise.allSettled([
-      fetchJson("/api/status"),
-      fetchJson("/api/metrics"),
-    ]);
-    if (statusResult.status === "fulfilled") renderStatus(statusResult.value);
-    else renderStatusError();
-    if (metricsResult.status === "fulfilled") renderMetrics(metricsResult.value);
-    else renderMetricsError(metricsResult.reason);
-
-    const refreshError = statusResult.status === "rejected" ? statusResult.reason
-      : metricsResult.status === "rejected" ? metricsResult.reason : null;
-    if (refreshError) {
-      const prefix = options.preserveNotice ? "gcloud 操作命令已结束，但刷新失败：" : "";
-      setNotice(prefix + refreshError.message, "error");
-    }
+    renderStatus(await fetchJson("/api/status"));
   } catch (error) {
     renderStatusError();
-    renderMetricsError(error);
     const prefix = options.preserveNotice ? "gcloud 操作命令已结束，但刷新失败：" : "";
     setNotice(prefix + error.message, "error");
   } finally {
@@ -496,6 +244,3 @@ byId("confirm-dialog").addEventListener("cancel", (event) => {
 });
 
 refreshAll();
-
-window.setInterval(refreshTrafficSummary, 10000);
-document.addEventListener("visibilitychange", refreshTrafficSummary);

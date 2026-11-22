@@ -1,4 +1,6 @@
 vps.local.json
+deploy/outline/inventory.local.json
+deploy/outline/generated/
 .env
 .env.*
 *credentials*.json

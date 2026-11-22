@@ -1,0 +1,16 @@
+{
+  "host": "203.0.113.10",
+  "port": 443,
+  "devices": [
+    {
+      "id": "alice-phone",
+      "label": "Alice Phone",
+      "secret": "replace-with-a-unique-secret-for-alice"
+    },
+    {
+      "id": "bob-laptop",
+      "label": "Bob Laptop",
+      "secret": "replace-with-a-different-secret-for-bob"
+    }
+  ]
+}

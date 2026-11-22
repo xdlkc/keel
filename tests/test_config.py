@@ -62,6 +62,50 @@ class ConfigTests(unittest.TestCase):
                 with self.assertRaises(ConfigError):
                     load_config(self.path)
 
+    def test_optional_dashboard_url_allows_https_and_loopback_http(self):
+        urls = [
+            "https://grafana.example.com/d/keel-outline/outline?orgId=1",
+            "http://127.0.0.1:3000/d/keel-outline/outline",
+            "http://localhost:3000/d/keel-outline/outline",
+            "http://[::1]:3000/d/keel-outline/outline",
+        ]
+        for url in urls:
+            with self.subTest(url=url):
+                self.write({
+                    "project": "project-a",
+                    "zone": "zone-a",
+                    "instance": "vm-a",
+                    "trafficProxyPort": 18766,
+                    "dashboardUrl": url,
+                })
+                config = load_config(self.path)
+                self.assertEqual(config.dashboard_url, url)
+                self.assertEqual(config.traffic_proxy_port, 18766)
+
+    def test_dashboard_url_rejects_credentials_and_unsafe_targets(self):
+        urls = [
+            "http://grafana.example.com/d/keel-outline",
+            "https://user@grafana.example.com/d/keel-outline",
+            "https://user:password@grafana.example.com/d/keel-outline",
+            "javascript:alert(1)",
+            "//grafana.example.com/d/keel-outline",
+            "https://",
+            "https://grafana.example.com:invalid/d/keel-outline",
+            "https://grafana.example.com\\@evil.example/",
+            "https://grafana.example.com/\nLocation:https://evil.example",
+        ]
+        for url in urls:
+            with self.subTest(url=url):
+                self.write({
+                    "project": "project-a",
+                    "zone": "zone-a",
+                    "instance": "vm-a",
+                    "dashboardUrl": url,
+                })
+                with self.assertRaisesRegex(ConfigError, "dashboardUrl") as caught:
+                    load_config(self.path)
+                self.assertNotIn("password", str(caught.exception))
+
     def test_unknown_fields_are_rejected(self):
         self.write({
             "project": "project-a",

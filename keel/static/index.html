@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="console-actions">
-        <a class="button button-secondary devices-link" href="/devices">设备流量</a>
+        <a id="dashboard-link" class="button button-secondary dashboard-link" href="/devices" target="_blank" rel="noopener noreferrer" hidden>Grafana 仪表盘 <span aria-hidden="true">↗</span></a>
         <button id="refresh-button" class="button button-secondary" type="button">
           <span class="refresh-symbol" aria-hidden="true">↻</span>
           <span id="refresh-label">刷新数据</span>
@@ -71,92 +71,15 @@
           </div>
         </dl>
       </section>
-
-      <section class="traffic-summary chart-card" aria-labelledby="traffic-summary-title">
-        <div class="section-heading">
-          <div>
-            <h2 id="traffic-summary-title">设备流量</h2>
-            <p>每端口 RX + TX · 总量仅从监测起累计</p>
-          </div>
-          <a class="traffic-details-link" href="/devices">设备详情 <span aria-hidden="true">→</span></a>
-        </div>
-        <p id="traffic-summary-status" class="traffic-summary-status" role="status">正在读取设备流量…</p>
-        <div id="traffic-summary-list" class="traffic-summary-list" aria-label="设备当前流量"></div>
-      </section>
-
-      <section class="metrics-section" aria-labelledby="metrics-title">
-        <div class="section-heading">
-          <div>
-            <h2 id="metrics-title">运行趋势</h2>
-            <p>最近 1 小时 · 分钟级聚合</p>
-          </div>
-          <span class="source-label">Cloud Monitoring</span>
-        </div>
-
-        <div class="charts-grid">
-          <article class="chart-card">
-            <div class="chart-heading">
-              <div>
-                <h3>CPU 利用率</h3>
-                <p>百分比（%）</p>
-              </div>
-              <div class="chart-latest">
-                <span>最新值</span>
-                <strong id="cpu-latest">—</strong>
-              </div>
-            </div>
-            <div class="chart-plot">
-              <svg id="cpu-chart" class="chart" viewBox="0 0 640 220" role="img" aria-label="最近一小时 CPU 利用率趋势图"></svg>
-              <div id="cpu-empty" class="chart-empty">正在读取指标…</div>
-            </div>
-            <div class="chart-footer">
-              <span id="cpu-meta">等待数据</span>
-              <span><i class="legend-dot" aria-hidden="true"></i>CPU</span>
-            </div>
-          </article>
-
-          <article class="chart-card">
-            <div class="chart-heading">
-              <div>
-                <h3>出站网络</h3>
-                <p>Mbit/s · 全部网卡合计</p>
-              </div>
-              <div class="chart-latest">
-                <span>最新值</span>
-                <strong id="network-latest">—</strong>
-              </div>
-            </div>
-            <div class="chart-plot">
-              <svg id="network-chart" class="chart chart-network" viewBox="0 0 640 220" role="img" aria-label="最近一小时出站网络趋势图"></svg>
-              <div id="network-empty" class="chart-empty">正在读取指标…</div>
-            </div>
-            <div class="chart-footer">
-              <span id="network-meta">等待数据</span>
-              <span><i class="legend-dot network-dot" aria-hidden="true"></i>OUT</span>
-            </div>
-          </article>
-        </div>
-        <p class="metric-note">折线中断表示该分钟没有数据；缺失值不会按零处理。</p>
-      </section>
     </main>
 
-    <footer class="footer">
-      <nav class="official-links" aria-label="Google Cloud 官方链接">
-        <a id="console-link" href="https://console.cloud.google.com/compute/instances" target="_blank" rel="noopener noreferrer">项目控制台 <span aria-hidden="true">↗</span></a>
-        <a id="monitoring-link" href="https://console.cloud.google.com/monitoring" target="_blank" rel="noopener noreferrer">Monitoring <span aria-hidden="true">↗</span></a>
-        <a id="billing-link" href="https://console.cloud.google.com/billing" target="_blank" rel="noopener noreferrer">账单与费用 <span aria-hidden="true">↗</span></a>
-      </nav>
-      <p>启动可能产生费用；停止后，持久磁盘和静态或保留公网 IP 仍可能计费，临时外部 IPv4 地址可能在再次启动后改变。</p>
-    </footer>
   </div>
 
   <dialog id="confirm-dialog" class="confirm-dialog" aria-labelledby="dialog-title">
     <form id="confirm-form">
-      <div class="dialog-kicker">受保护操作</div>
       <h2 id="dialog-title">确认操作</h2>
       <p id="dialog-description" class="dialog-description"></p>
       <p id="dialog-target" class="dialog-target"></p>
-      <p class="dialog-warning">只有 gcloud 命令成功结束后才会报告成功；等待期间不会预设实例状态。</p>
       <label class="confirm-label" for="confirm-input">输入实例名 <strong id="dialog-instance"></strong> 以确认</label>
       <input id="confirm-input" name="confirmation" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" required>
       <div class="dialog-actions">

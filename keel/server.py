@@ -39,6 +39,7 @@ def _links(config):
         ),
         "monitoring": "https://console.cloud.google.com/monitoring?" + project_query,
         "billing": "https://console.cloud.google.com/billing",
+        "dashboard": config.dashboard_url,
     }
 
 
@@ -108,13 +109,15 @@ class KeelRequestHandler(BaseHTTPRequestHandler):
             tokens[0], self.server.session_token
         )
 
-    def _send_bytes(self, status, content, content_type):
+    def _send_bytes(self, status, content, content_type, extra_headers=None):
         self.close_connection = True
         self.send_response(status)
         self.send_header("Connection", "close")
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(content)))
         self.send_header("Cache-Control", "no-store")
+        for name, value in (extra_headers or {}).items():
+            self.send_header(name, value)
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("X-Frame-Options", "DENY")
@@ -166,17 +169,15 @@ class KeelRequestHandler(BaseHTTPRequestHandler):
             if path in {"/", "/index.html"}:
                 self._send_static("index.html", "text/html; charset=utf-8")
             elif path == "/devices":
-                self._send_static("devices.html", "text/html; charset=utf-8")
+                self._devices()
             elif path == "/static/app.js":
                 self._send_static("app.js", "text/javascript; charset=utf-8")
-            elif path == "/static/devices.js":
-                self._send_static("devices.js", "text/javascript; charset=utf-8")
-            elif path in {"/static/style.css", "/static/traffic.css"}:
-                self._send_static(path.rsplit("/", 1)[1], "text/css; charset=utf-8")
+            elif path == "/static/style.css":
+                self._send_static("style.css", "text/css; charset=utf-8")
             elif path == "/api/traffic":
                 self._traffic()
             elif path == "/api/session":
-                self._send_json(200, {"csrfToken": self.server.session_token})
+                self._session()
             elif path == "/api/status":
                 self._status()
             elif path == "/api/metrics":
@@ -193,6 +194,25 @@ class KeelRequestHandler(BaseHTTPRequestHandler):
             self._error(404, "not_found", "未找到请求的资源。")
             return
         self._send_bytes(200, content, content_type)
+
+    def _session(self):
+        payload = {"csrfToken": self.server.session_token}
+        try:
+            config = load_config(self.server.config_path)
+        except ConfigError:
+            config = None
+        if config is not None:
+            payload["links"] = _links(config)
+        self._send_json(200, payload)
+
+    def _devices(self):
+        config = load_config(self.server.config_path)
+        self._send_bytes(
+            302,
+            b"",
+            "text/plain; charset=utf-8",
+            {"Location": config.dashboard_url or "/"},
+        )
 
     def _status(self):
         config = load_config(self.server.config_path)
