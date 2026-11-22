@@ -2,6 +2,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 from .errors import ConfigError
 
@@ -20,6 +21,7 @@ class Config:
     project: str
     zone: str
     instance: str
+    traffic_proxy_port: Optional[int] = None
 
 
 def default_config_path():
@@ -44,7 +46,7 @@ def load_config(path=None):
     if not isinstance(data, dict):
         raise ConfigError("vps.local.json 必须是 JSON 对象。")
 
-    unknown = set(data) - {"project", "zone", "instance"}
+    unknown = set(data) - {"project", "zone", "instance", "trafficProxyPort"}
     if unknown:
         raise ConfigError("vps.local.json 含有不支持的配置项。")
 
@@ -62,4 +64,7 @@ def load_config(path=None):
         if not valid:
             raise ConfigError("配置 {} 不是有效的 GCP 标识符。".format(field))
         values[field] = value
-    return Config(**values)
+    port = data.get("trafficProxyPort")
+    if port is not None and (type(port) is not int or not 1 <= port <= 65535):
+        raise ConfigError("trafficProxyPort 必须是 1 到 65535 的本机 HTTP 代理端口。")
+    return Config(**values, traffic_proxy_port=port)

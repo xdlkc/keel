@@ -9,6 +9,8 @@ from unittest.mock import Mock
 
 from keel.errors import AuthError, GcloudError
 from keel.server import create_server
+from keel.traffic import Device, Mapping, TrafficCollector
+from keel.traffic_server import create_server as create_traffic_server
 
 
 class WebGuardTests(unittest.TestCase):
@@ -43,12 +45,15 @@ class WebGuardTests(unittest.TestCase):
         self.server.server_close()
         self.temp_dir.cleanup()
 
-    def request(self, method, path, body=None, headers=None, details=False):
+    def request(self, method, path, body=None, headers=None, details=False, raw=False):
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
         self.addCleanup(connection.close)
         connection.request(method, path, body=body, headers=headers or {})
         response = connection.getresponse()
-        payload = json.loads(response.read().decode("utf-8"))
+        content = response.read()
+        if raw:
+            return response.status, content
+        payload = json.loads(content.decode("utf-8"))
         if details:
             return response.status, payload, response.getheader("Connection")
         return response.status, payload
@@ -183,6 +188,82 @@ class WebGuardTests(unittest.TestCase):
         self.assertEqual(status, 502)
         self.assertNotIn("success", payload)
         self.assertEqual(payload["error"], "cloud_error")
+
+    def test_devices_view_is_available_without_tunnel_or_cloud_access(self):
+        status, content = self.request("GET", "/", raw=True)
+        self.assertEqual(status, 200)
+        self.assertIn(b'href="/devices"', content)
+        status, content = self.request("GET", "/devices", raw=True)
+        self.assertEqual(status, 200)
+        self.assertIn(b"width=device-width", content)
+        status, payload = self.request("GET", "/api/traffic")
+        self.assertEqual(status, 503)
+        self.assertEqual(payload["error"], "traffic_unavailable")
+        self.cloud.describe.assert_not_called()
+
+    def test_proxy_port_must_not_loop_back_into_admin(self):
+        cfg = json.loads(self.config_path.read_text())
+        cfg["trafficProxyPort"] = self.port
+        self.config_path.write_text(json.dumps(cfg))
+        self.assertEqual(self.request("GET", "/api/traffic")[0], 503)
+        with self.assertRaises(ValueError):
+            create_server(port=self.port, traffic_forward_port=self.port)
+
+    def test_devices_view_uses_only_configured_fixed_loopback_forward(self):
+        mapping = Mapping(
+            manager_socket="/run/manager.sock",
+            manager_unit=None,
+            devices=(Device(8388, "Phone A"),),
+        )
+        database = Path(self.temp_dir.name) / "traffic.sqlite3"
+        collector = TrafficCollector(
+            mapping,
+            database,
+            wall_clock=lambda: 1000.0,
+            monotonic_clock=lambda: 10.0,
+        )
+
+        class Client:
+            def ping(self):
+                return {8388: 100}
+
+        class Identity:
+            def current(self):
+                return "generation-a"
+
+        collector.collect_once(Client(), Identity())
+        collector.close()
+        traffic_server = create_traffic_server(mapping, database, port=0)
+        traffic_thread = threading.Thread(target=traffic_server.serve_forever)
+        traffic_thread.start()
+
+        def stop_traffic_server():
+            traffic_server.shutdown()
+            traffic_thread.join(timeout=5)
+            traffic_server.server_close()
+
+        self.addCleanup(stop_traffic_server)
+        main_server = create_server(
+            port=0,
+            config_path=self.config_path,
+            cloud_factory=Mock(return_value=self.cloud),
+            traffic_forward_port=traffic_server.server_address[1],
+        )
+        main_thread = threading.Thread(target=main_server.serve_forever)
+        main_thread.start()
+        self.port = main_server.server_address[1]
+        try:
+            status, payload = self.request("GET", "/api/traffic?limit=1")
+            self.assertEqual(status, 200)
+            self.assertEqual(payload["devices"][0]["label"], "Phone A")
+            status, payload = self.request("GET", "/api/traffic?limit=0")
+            self.assertEqual(status, 400)
+            self.assertEqual(payload["error"], "invalid_range")
+            self.cloud.describe.assert_not_called()
+        finally:
+            main_server.shutdown()
+            main_thread.join(timeout=5)
+            main_server.server_close()
 
 
 if __name__ == "__main__":

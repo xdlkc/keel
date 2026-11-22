@@ -50,6 +50,8 @@ a { color: inherit; }
 }
 
 .topbar { justify-content: space-between; margin-bottom: 24px; }
+.console-actions { display: flex; align-items: center; gap: 9px; }
+.devices-link { text-decoration: none; }
 .brand { gap: 12px; }
 .brand-mark {
   display: grid;
@@ -175,6 +177,20 @@ h3 { margin: 0; font-size: 14px; font-weight: 600; }
 .legend-dot { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: var(--teal); }
 .network-dot { background: var(--blue); }
 .metric-note { margin: 9px 2px 0; color: var(--faint); font-size: 11px; }
+
+.traffic-summary { margin-top: 24px; padding-bottom: 16px; }
+.traffic-summary .section-heading { margin-bottom: 10px; }
+.traffic-details-link { color: #9eb4c8; font-size: 12px; text-decoration: none; white-space: nowrap; }
+.traffic-details-link:hover { color: var(--teal); }
+.traffic-summary-status { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
+.traffic-summary-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.traffic-summary-device { min-width: 0; padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--surface-raised); }
+.traffic-summary-device h3 { overflow-wrap: anywhere; }
+.traffic-summary-port { margin: 2px 0 0; color: var(--faint); font-size: 10px; }
+.traffic-summary-numbers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 9px 0 0; }
+.traffic-summary-numbers dt { color: var(--faint); font-size: 10px; }
+.traffic-summary-numbers dd { margin: 2px 0 0; color: #bce9e2; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.traffic-summary-numbers dd.is-unavailable { color: var(--muted); font-size: 12px; font-weight: 400; }
 
 .footer { margin-top: 28px; padding-top: 17px; border-top: 1px solid var(--border-soft); color: var(--faint); font-size: 11px; }
 .official-links { flex-wrap: wrap; gap: 20px; }

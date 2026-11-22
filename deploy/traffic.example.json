@@ -1,0 +1,14 @@
+{
+  "managerSocket": "/run/ssmanager/manager.sock",
+  "managerUnit": "ssmanager.service",
+  "devices": [
+    {
+      "port": 21001,
+      "label": "Phone - dedicated port"
+    },
+    {
+      "port": 21002,
+      "label": "Laptop - dedicated port"
+    }
+  ]
+}

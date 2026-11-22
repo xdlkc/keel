@@ -17,10 +17,13 @@
           <p class="brand-subtitle">单实例本地控制台</p>
         </div>
       </div>
-      <button id="refresh-button" class="button button-secondary" type="button">
-        <span class="refresh-symbol" aria-hidden="true">↻</span>
-        <span id="refresh-label">刷新数据</span>
-      </button>
+      <div class="console-actions">
+        <a class="button button-secondary devices-link" href="/devices">设备流量</a>
+        <button id="refresh-button" class="button button-secondary" type="button">
+          <span class="refresh-symbol" aria-hidden="true">↻</span>
+          <span id="refresh-label">刷新数据</span>
+        </button>
+      </div>
     </header>
 
     <main>
@@ -67,6 +70,18 @@
             <dd id="updated-at-value">—</dd>
           </div>
         </dl>
+      </section>
+
+      <section class="traffic-summary chart-card" aria-labelledby="traffic-summary-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="traffic-summary-title">设备流量</h2>
+            <p>每端口 RX + TX · 总量仅从监测起累计</p>
+          </div>
+          <a class="traffic-details-link" href="/devices">设备详情 <span aria-hidden="true">→</span></a>
+        </div>
+        <p id="traffic-summary-status" class="traffic-summary-status" role="status">正在读取设备流量…</p>
+        <div id="traffic-summary-list" class="traffic-summary-list" aria-label="设备当前流量"></div>
       </section>
 
       <section class="metrics-section" aria-labelledby="metrics-title">

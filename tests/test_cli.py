@@ -24,6 +24,11 @@ class CliTests(unittest.TestCase):
     def test_default_port_and_required_confirmation(self):
         args = cli.build_parser().parse_args(["serve"])
         self.assertEqual(args.port, 8765)
+        self.assertIsNone(args.traffic_forward_port)
+        args = cli.build_parser().parse_args(["serve", "--traffic-forward-port", "8766"])
+        self.assertEqual(args.traffic_forward_port, 8766)
+        with redirect_stderr(io.StringIO()):
+            self.assertEqual(cli.main(["serve", "--traffic-forward-port", "0"]), 2)
         with redirect_stderr(io.StringIO()):
             with self.assertRaises(SystemExit):
                 cli.build_parser().parse_args(["start"])

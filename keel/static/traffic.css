@@ -1,0 +1,81 @@
+.traffic-shell { max-width: 1080px; }
+.traffic-intro {
+  padding: 20px 22px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(13, 25, 40, .94);
+}
+.traffic-intro h1 { font-size: 23px; }
+.traffic-intro > p { max-width: 780px; margin: 14px 0 0; color: var(--muted); }
+.collection-summary {
+  display: grid;
+  grid-template-columns: 1.4fr 1.4fr 1fr;
+  gap: 12px;
+  margin: 18px 0 0;
+  padding-top: 15px;
+  border-top: 1px solid var(--border-soft);
+}
+.collection-summary dt { color: var(--faint); font-size: 11px; }
+.collection-summary dd { margin: 3px 0 0; color: #cfdae5; font-size: 12px; }
+.device-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+.device-card {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(13, 25, 40, .94);
+}
+.device-card.is-stale { border-color: #66522e; }
+.device-card.has-error { border-color: #633841; }
+.device-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.device-heading h2 { font-size: 18px; overflow-wrap: anywhere; }
+.device-port { margin: 3px 0 0; color: var(--faint); font-size: 11px; }
+.transport-badge {
+  flex: none;
+  padding: 3px 8px;
+  border: 1px solid #2b4357;
+  border-radius: 999px;
+  color: #b5c5d4;
+  font-size: 10px;
+}
+.transport-badge.shared { border-color: #66522e; background: #2c271b; color: #eac474; }
+.shared-warning { margin: 10px 0 0; color: var(--amber); font-size: 11px; }
+.device-numbers { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
+.device-number { min-width: 0; }
+.device-number span { display: block; color: var(--faint); font-size: 11px; }
+.device-number strong { display: inline-block; margin-top: 3px; color: #bce9e2; font-size: 23px; font-weight: 630; font-variant-numeric: tabular-nums; }
+.device-number .unit { display: inline; margin-left: 5px; color: var(--muted); font-size: 11px; }
+.device-number data { display: block; margin-top: 2px; color: var(--faint); font-size: 10px; overflow-wrap: anywhere; }
+.sparkline-wrap { margin-top: 15px; padding-top: 12px; border-top: 1px solid var(--border-soft); }
+.sparkline { display: block; width: 100%; height: auto; min-height: 80px; }
+.sparkline-empty { display: grid; min-height: 90px; place-items: center; color: var(--faint); font-size: 11px; text-align: center; }
+.sparkline-meta, .sparkline-dates { display: flex; justify-content: space-between; gap: 8px; color: var(--faint); font-size: 10px; }
+.sparkline-dates { margin-top: 3px; }
+.device-state { margin: 12px 0 0; color: var(--muted); font-size: 12px; }
+.device-state.stale { color: var(--amber); }
+.device-state.error { color: var(--red); }
+.device-observed { margin: 5px 0 0; color: var(--faint); font-size: 11px; }
+.traffic-empty { margin: 18px 0; padding: 30px 18px; border: 1px dashed var(--border); border-radius: 10px; color: var(--muted); text-align: center; }
+.measurement-notes { margin-top: 24px; color: var(--muted); font-size: 12px; }
+.measurement-notes h2 { font-size: 14px; }
+.measurement-notes ul { margin: 8px 0 0; padding-left: 20px; }
+.measurement-notes li + li { margin-top: 6px; }
+
+@media (max-width: 700px) {
+  .device-grid { grid-template-columns: 1fr; }
+  .collection-summary { grid-template-columns: 1fr 1fr; }
+  .collection-summary > div:last-child { grid-column: 1 / -1; }
+}
+
+@media (max-width: 420px) {
+  .traffic-intro { padding: 17px 16px; }
+  .traffic-intro .source-label { display: none; }
+  .device-card { padding: 16px 14px; }
+  .device-number strong { font-size: 20px; }
+  .device-heading { flex-direction: column; gap: 8px; }
+}

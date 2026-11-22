@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Keel · 设备端口流量</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/traffic.css">
+</head>
+<body>
+  <div class="shell traffic-shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">K</span>
+        <div>
+          <div class="brand-name">Keel</div>
+          <p class="brand-subtitle">ssmanager 服务端设备端口流量</p>
+        </div>
+      </div>
+      <button id="refresh-button" class="button button-secondary" type="button">
+        <span class="refresh-symbol" aria-hidden="true">↻</span>
+        <span id="refresh-label">刷新数据</span>
+      </button>
+    </header>
+
+    <main>
+      <div id="notice" class="notice" role="alert" hidden></div>
+      <noscript><div class="notice notice-error">此面板需要启用 JavaScript。</div></noscript>
+
+      <section class="traffic-intro" aria-labelledby="traffic-title">
+        <div class="section-heading">
+          <div>
+            <h1 id="traffic-title">设备端口流量</h1>
+            <p>服务端计数 · 每 10 秒自动刷新</p>
+          </div>
+          <span class="source-label">shadowsocks-rust ssmanager</span>
+        </div>
+        <p>每个独立端口对应一台由管理员分配的设备。接收与发送合并计量，无法拆分 RX／TX。标记为“旧共享传输”的端口是共享总量，不能据此识别物理设备。</p>
+        <dl class="collection-summary">
+          <div>
+            <dt>面板更新时间</dt>
+            <dd><time id="generated-at">—</time></dd>
+          </div>
+          <div>
+            <dt>最近成功采集</dt>
+            <dd><time id="last-success-at">—</time></dd>
+          </div>
+          <div>
+            <dt>过期阈值</dt>
+            <dd id="stale-after">—</dd>
+          </div>
+        </dl>
+      </section>
+
+      <div id="empty-state" class="traffic-empty" role="status">正在读取设备流量…</div>
+      <section id="device-list" class="device-grid" aria-label="设备流量列表"></section>
+
+      <section class="measurement-notes" aria-labelledby="measurement-title">
+        <h2 id="measurement-title">计量边界</h2>
+        <ul>
+          <li>总量是 Keel 首次观察后实际累计到的字节数，不是 ssmanager 的历史总量，也不是 GCP 账单流量。</li>
+          <li>首次观察、采集中断、端口缺失或管理器重置后，速率暂不可用；未知区间不会伪造增量。计数回落时不会把重置后的计数重复累加。</li>
+          <li>折线图显示近期每次成功采样的合计字节速率；断点表示没有可用速率。数据过期后保留最后总量，但当前速率显示为不可用。</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>此页面只有只读聚合接口，不提供本地实例管理、gcloud 操作或代理配置功能。标签来自服务端静态映射，不采集客户端 IP 或主机名。</p>
+    </footer>
+  </div>
+  <script src="/static/devices.js" defer></script>
+</body>
+</html>

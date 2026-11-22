@@ -12,6 +12,7 @@ const state = {
 };
 
 const byId = (id) => document.getElementById(id);
+const trafficNumberFormat = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 });
 const statusLabels = {
   PROVISIONING: "准备中",
   STAGING: "启动中",
@@ -263,9 +264,109 @@ function renderMetricsError(error) {
   }
 }
 
+function trafficSummaryElement(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function formatTrafficBytes(value) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return "—";
+  const units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
+  let scaled = value;
+  let index = 0;
+  while (scaled >= 1024 && index < units.length - 1) {
+    scaled /= 1024;
+    index += 1;
+  }
+  return `${trafficNumberFormat.format(scaled)} ${units[index]}`;
+}
+
+function setTrafficSummaryStatus(message) {
+  const status = byId("traffic-summary-status");
+  status.textContent = message || "";
+  status.hidden = !message;
+}
+
+function renderTrafficSummaryError() {
+  byId("traffic-summary-list").replaceChildren();
+  setTrafficSummaryStatus("设备流量暂不可用。");
+}
+
+function renderTrafficSummary(payload) {
+  if (!payload || !Array.isArray(payload.devices)) throw new Error("invalid traffic payload");
+  const list = byId("traffic-summary-list");
+  list.replaceChildren();
+  const devices = payload.devices.filter((device) => device && typeof device === "object");
+  if (!devices.length) {
+    setTrafficSummaryStatus("暂无设备流量数据。");
+    return;
+  }
+
+  let hasUnavailableRate = false;
+  for (const device of devices) {
+    const port = Number.isInteger(device.port) ? device.port : "—";
+    const label = typeof device.label === "string" && device.label ? device.label : `端口 ${port}`;
+    const card = trafficSummaryElement("article", "traffic-summary-device");
+    card.appendChild(trafficSummaryElement("h3", "", label));
+    card.appendChild(trafficSummaryElement(
+      "p", "traffic-summary-port", `服务端端口 ${port}${device.shared ? " · 旧共享传输" : ""}`,
+    ));
+
+    const numbers = trafficSummaryElement("dl", "traffic-summary-numbers");
+    const rateBlock = trafficSummaryElement("div");
+    rateBlock.appendChild(trafficSummaryElement("dt", "", "当前合计速率（RX + TX）"));
+    const validRate = typeof device.rateBytesPerSecond === "number" &&
+      Number.isFinite(device.rateBytesPerSecond) && device.rateBytesPerSecond >= 0;
+    const rate = trafficSummaryElement(
+      "dd", validRate ? "" : "is-unavailable",
+      validRate ? `${formatTrafficBytes(device.rateBytesPerSecond)}/s` : "暂不可用",
+    );
+    if (!validRate) {
+      hasUnavailableRate = true;
+      rate.title = "当前速率不可用；详见设备页。";
+    }
+    rateBlock.appendChild(rate);
+    numbers.appendChild(rateBlock);
+
+    const totalBlock = trafficSummaryElement("div");
+    totalBlock.appendChild(trafficSummaryElement("dt", "", "监测以来总量"));
+    const validTotal = typeof device.totalBytes === "number" &&
+      Number.isFinite(device.totalBytes) && device.totalBytes >= 0;
+    const total = trafficSummaryElement("dd", validTotal ? "" : "is-unavailable", formatTrafficBytes(device.totalBytes));
+    if (validTotal) total.title = `${device.totalBytes} B`;
+    totalBlock.appendChild(total);
+    numbers.appendChild(totalBlock);
+    card.appendChild(numbers);
+    list.appendChild(card);
+  }
+
+  if (hasUnavailableRate) setTrafficSummaryStatus("部分当前速率不可用；详见设备页。");
+  else if (payload.collector && payload.collector.error) setTrafficSummaryStatus("采集状态异常；详见设备页。");
+  else setTrafficSummaryStatus(null);
+}
+
+let trafficPending = false;
+async function refreshTrafficSummary() {
+  if (document.hidden || trafficPending) return;
+  trafficPending = true;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 6000);
+  try {
+    renderTrafficSummary(await fetchJson("/api/traffic?limit=1", { signal: controller.signal }));
+  } catch (error) {
+    renderTrafficSummaryError();
+  } finally {
+    window.clearTimeout(timeout);
+    trafficPending = false;
+  }
+}
+
 async function refreshAll(options = {}) {
   if (state.refreshing) return;
   state.refreshing = true;
+  void refreshTrafficSummary();
   updateActionButtons();
   byId("refresh-button").disabled = true;
   byId("refresh-button").classList.add("is-refreshing");
@@ -395,3 +496,6 @@ byId("confirm-dialog").addEventListener("cancel", (event) => {
 });
 
 refreshAll();
+
+window.setInterval(refreshTrafficSummary, 10000);
+document.addEventListener("visibilitychange", refreshTrafficSummary);

@@ -1,4 +1,5 @@
 import hmac
+import http.client
 import json
 import secrets
 from datetime import datetime, timezone
@@ -18,10 +19,12 @@ from .errors import (
 )
 from .gcloud import Gcloud, instance_view
 from .metrics import MonitoringClient
+from .traffic_server import parse_history_limit
 
 
 STATIC_DIR = Path(__file__).with_name("static")
 MAX_BODY_BYTES = 4096
+MAX_FORWARDED_BODY_BYTES = 16 * 1024 * 1024
 
 
 def _now():
@@ -42,10 +45,19 @@ def _links(config):
 class ConsoleHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, port, config_path, cloud_factory, monitoring_factory):
+    def __init__(self, port, config_path, cloud_factory, monitoring_factory, traffic_forward_port):
         self.config_path = config_path
         self.cloud_factory = cloud_factory
         self.monitoring_factory = monitoring_factory
+        if traffic_forward_port is not None and (
+            isinstance(traffic_forward_port, bool)
+            or not isinstance(traffic_forward_port, int)
+            or not 1 <= traffic_forward_port <= 65535
+        ):
+            raise ValueError("traffic_forward_port out of range")
+        if traffic_forward_port is not None and traffic_forward_port == port:
+            raise ValueError("转发端口不能与管理后台监听端口相同。")
+        self.traffic_forward_port = traffic_forward_port
         self.session_token = secrets.token_urlsafe(32)
         super().__init__(("127.0.0.1", port), KeelRequestHandler)
 
@@ -153,10 +165,16 @@ class KeelRequestHandler(BaseHTTPRequestHandler):
             path = urlsplit(self.path).path
             if path in {"/", "/index.html"}:
                 self._send_static("index.html", "text/html; charset=utf-8")
+            elif path == "/devices":
+                self._send_static("devices.html", "text/html; charset=utf-8")
             elif path == "/static/app.js":
                 self._send_static("app.js", "text/javascript; charset=utf-8")
-            elif path == "/static/style.css":
-                self._send_static("style.css", "text/css; charset=utf-8")
+            elif path == "/static/devices.js":
+                self._send_static("devices.js", "text/javascript; charset=utf-8")
+            elif path in {"/static/style.css", "/static/traffic.css"}:
+                self._send_static(path.rsplit("/", 1)[1], "text/css; charset=utf-8")
+            elif path == "/api/traffic":
+                self._traffic()
             elif path == "/api/session":
                 self._send_json(200, {"csrfToken": self.server.session_token})
             elif path == "/api/status":
@@ -196,6 +214,58 @@ class KeelRequestHandler(BaseHTTPRequestHandler):
             raise GcloudError("实例数据缺少有效的数字 ID，无法查询指标。")
         client = self.server.monitoring_factory(cloud.access_token)
         self._send_json(200, client.collect(config, instance["id"]))
+
+    def _traffic(self):
+        try:
+            limit = parse_history_limit(urlsplit(self.path).query)
+        except ValueError:
+            self._error(400, "invalid_range", "history limit 必须是 1 到 360 的整数。")
+            return
+        port = self.server.traffic_forward_port
+        target = "/api/traffic?limit={}".format(limit)
+        if port is None:
+            config = load_config(self.server.config_path)
+            port = config.traffic_proxy_port
+            target = "http://192.0.2.80" + target
+        if not port or port == self.server.server_address[1]:
+            self._error(503, "traffic_unavailable", "请配置独立的本机代理或 SSH 转发端口。")
+            return
+        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
+        try:
+            connection.request(
+                "GET",
+                target,
+                headers={
+                    "Host": "192.0.2.80",
+                    "Accept": "application/json",
+                    "Connection": "close",
+                },
+            )
+            response = connection.getresponse()
+            content_type = response.getheader("Content-Type", "").split(";", 1)[0].lower()
+            content = response.read(MAX_FORWARDED_BODY_BYTES + 1)
+            if (
+                response.status != 200
+                or content_type != "application/json"
+                or len(content) > MAX_FORWARDED_BODY_BYTES
+            ):
+                raise ValueError("invalid forwarded response")
+            payload = json.loads(content.decode("utf-8"))
+            if (
+                not isinstance(payload, dict)
+                or not isinstance(payload.get("devices"), list)
+                or not isinstance(payload.get("collector"), dict)
+            ):
+                raise ValueError("invalid forwarded payload")
+            self._send_json(200, payload)
+        except (OSError, ValueError, UnicodeError, json.JSONDecodeError, http.client.HTTPException):
+            self._error(
+                503,
+                "traffic_unavailable",
+                "暂时无法读取设备流量，请检查节点或 SSH 转发和只读服务。",
+            )
+        finally:
+            connection.close()
 
     def do_POST(self):
         if not self._guard_request(origin_required=True):
@@ -263,12 +333,17 @@ class KeelRequestHandler(BaseHTTPRequestHandler):
     do_PATCH = do_OPTIONS
 
 
-def create_server(port=8765, config_path=None, cloud_factory=Gcloud, monitoring_factory=MonitoringClient):
-    return ConsoleHTTPServer(port, config_path, cloud_factory, monitoring_factory)
+def create_server(
+    port=8765, config_path=None, cloud_factory=Gcloud,
+    monitoring_factory=MonitoringClient, traffic_forward_port=None,
+):
+    return ConsoleHTTPServer(
+        port, config_path, cloud_factory, monitoring_factory, traffic_forward_port
+    )
 
 
-def serve(port=8765):
-    server = create_server(port=port)
+def serve(port=8765, traffic_forward_port=None):
+    server = create_server(port=port, traffic_forward_port=traffic_forward_port)
     actual_port = server.server_address[1]
     print("Keel：http://127.0.0.1:{}".format(actual_port), flush=True)
     print("仅监听本机回环地址。按 Ctrl+C 停止控制台。", flush=True)

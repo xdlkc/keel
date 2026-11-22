@@ -20,3 +20,7 @@ class AuthError(GcloudError):
 
 class MonitoringError(KeelError):
     pass
+
+
+class TrafficError(KeelError):
+    pass

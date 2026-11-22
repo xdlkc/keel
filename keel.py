@@ -20,6 +20,10 @@ def build_parser():
 
     serve = subparsers.add_parser("serve", help="启动仅本机访问的 Web 控制台")
     serve.add_argument("--port", type=int, default=8765, help="监听端口（默认 8765）")
+    serve.add_argument(
+        "--traffic-forward-port", type=int, default=None, metavar="PORT",
+        help="可选：将 /api/traffic 固定转发到 127.0.0.1:PORT",
+    )
 
     for command in ("start", "stop"):
         action = subparsers.add_parser(command, help="{}实例".format("启动" if command == "start" else "停止"))
@@ -64,8 +68,11 @@ def main(argv=None, cloud_factory=Gcloud):
         if not 1 <= args.port <= 65535:
             print("错误：端口必须在 1 到 65535 之间。", file=sys.stderr)
             return 2
+        if args.traffic_forward_port is not None and not 1 <= args.traffic_forward_port <= 65535:
+            print("错误：设备流量转发端口必须在 1 到 65535 之间。", file=sys.stderr)
+            return 2
         from keel.server import serve
-        serve(args.port)
+        serve(args.port, traffic_forward_port=args.traffic_forward_port)
         return 0
 
     try:
