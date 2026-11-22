@@ -1,0 +1,12 @@
+vps.local.json
+.env
+.env.*
+*credentials*.json
+service-account*.json
+secrets.json
+*.pem
+*.key
+*.token
+__pycache__/
+*.py[cod]
+.pytest_cache/

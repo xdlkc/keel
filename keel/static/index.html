@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Keel · 本地实例控制台</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">K</span>
+        <div>
+          <div class="brand-name">Keel</div>
+          <p class="brand-subtitle">单实例本地控制台</p>
+        </div>
+      </div>
+      <button id="refresh-button" class="button button-secondary" type="button">
+        <span class="refresh-symbol" aria-hidden="true">↻</span>
+        <span id="refresh-label">刷新数据</span>
+      </button>
+    </header>
+
+    <main>
+      <div id="notice" class="notice" role="alert" hidden></div>
+      <noscript><div class="notice notice-error">此控制台需要启用 JavaScript。</div></noscript>
+
+      <section class="instance-card" aria-labelledby="instance-name">
+        <div class="instance-heading">
+          <div>
+            <div class="instance-title-row">
+              <h1 id="instance-name">正在读取实例</h1>
+              <span id="status-pill" class="status-pill status-unknown">
+                <span class="status-dot" aria-hidden="true"></span>
+                <span id="status-text">状态未知</span>
+              </span>
+            </div>
+            <p class="project-line">项目 <span id="project-name">—</span></p>
+          </div>
+          <div class="instance-actions">
+            <button id="start-button" class="button button-primary" type="button" disabled>启动实例</button>
+            <button id="stop-button" class="button button-danger" type="button" disabled>停止实例</button>
+          </div>
+        </div>
+
+        <dl class="details-grid">
+          <div class="detail-item">
+            <dt>可用区</dt>
+            <dd id="zone-value">—</dd>
+          </div>
+          <div class="detail-item">
+            <dt>机器类型</dt>
+            <dd id="machine-type-value">—</dd>
+          </div>
+          <div class="detail-item">
+            <dt>启动磁盘</dt>
+            <dd id="boot-disk-value">—</dd>
+          </div>
+          <div class="detail-item">
+            <dt>公网 IP</dt>
+            <dd id="public-ip-value">—</dd>
+          </div>
+          <div class="detail-item updated-item">
+            <dt>最后更新</dt>
+            <dd id="updated-at-value">—</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="metrics-section" aria-labelledby="metrics-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="metrics-title">运行趋势</h2>
+            <p>最近 1 小时 · 分钟级聚合</p>
+          </div>
+          <span class="source-label">Cloud Monitoring</span>
+        </div>
+
+        <div class="charts-grid">
+          <article class="chart-card">
+            <div class="chart-heading">
+              <div>
+                <h3>CPU 利用率</h3>
+                <p>百分比（%）</p>
+              </div>
+              <div class="chart-latest">
+                <span>最新值</span>
+                <strong id="cpu-latest">—</strong>
+              </div>
+            </div>
+            <div class="chart-plot">
+              <svg id="cpu-chart" class="chart" viewBox="0 0 640 220" role="img" aria-label="最近一小时 CPU 利用率趋势图"></svg>
+              <div id="cpu-empty" class="chart-empty">正在读取指标…</div>
+            </div>
+            <div class="chart-footer">
+              <span id="cpu-meta">等待数据</span>
+              <span><i class="legend-dot" aria-hidden="true"></i>CPU</span>
+            </div>
+          </article>
+
+          <article class="chart-card">
+            <div class="chart-heading">
+              <div>
+                <h3>出站网络</h3>
+                <p>Mbit/s · 全部网卡合计</p>
+              </div>
+              <div class="chart-latest">
+                <span>最新值</span>
+                <strong id="network-latest">—</strong>
+              </div>
+            </div>
+            <div class="chart-plot">
+              <svg id="network-chart" class="chart chart-network" viewBox="0 0 640 220" role="img" aria-label="最近一小时出站网络趋势图"></svg>
+              <div id="network-empty" class="chart-empty">正在读取指标…</div>
+            </div>
+            <div class="chart-footer">
+              <span id="network-meta">等待数据</span>
+              <span><i class="legend-dot network-dot" aria-hidden="true"></i>OUT</span>
+            </div>
+          </article>
+        </div>
+        <p class="metric-note">折线中断表示该分钟没有数据；缺失值不会按零处理。</p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <nav class="official-links" aria-label="Google Cloud 官方链接">
+        <a id="console-link" href="https://console.cloud.google.com/compute/instances" target="_blank" rel="noopener noreferrer">项目控制台 <span aria-hidden="true">↗</span></a>
+        <a id="monitoring-link" href="https://console.cloud.google.com/monitoring" target="_blank" rel="noopener noreferrer">Monitoring <span aria-hidden="true">↗</span></a>
+        <a id="billing-link" href="https://console.cloud.google.com/billing" target="_blank" rel="noopener noreferrer">账单与费用 <span aria-hidden="true">↗</span></a>
+      </nav>
+      <p>启动可能产生费用；停止后，持久磁盘和静态或保留公网 IP 仍可能计费，临时外部 IPv4 地址可能在再次启动后改变。</p>
+    </footer>
+  </div>
+
+  <dialog id="confirm-dialog" class="confirm-dialog" aria-labelledby="dialog-title">
+    <form id="confirm-form">
+      <div class="dialog-kicker">受保护操作</div>
+      <h2 id="dialog-title">确认操作</h2>
+      <p id="dialog-description" class="dialog-description"></p>
+      <p id="dialog-target" class="dialog-target"></p>
+      <p class="dialog-warning">只有 gcloud 命令成功结束后才会报告成功；等待期间不会预设实例状态。</p>
+      <label class="confirm-label" for="confirm-input">输入实例名 <strong id="dialog-instance"></strong> 以确认</label>
+      <input id="confirm-input" name="confirmation" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+      <div class="dialog-actions">
+        <button id="cancel-action" class="button button-secondary" type="button">取消</button>
+        <button id="confirm-action" class="button button-primary" type="submit" disabled>确认执行</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>
