@@ -1,0 +1,9 @@
+[Unit]
+Description=Renew the Keel short-lived IP certificate
+After=network-online.target nginx.service
+Wants=network-online.target
+Requires=nginx.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/keel-certbot/bin/certbot renew --quiet --cert-name keel-outline --deploy-hook "/usr/bin/systemctl reload nginx"

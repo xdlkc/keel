@@ -2,13 +2,17 @@
 
 English | [简体中文](./README.zh-CN.md)
 
-Keel is a Chinese-first local console for one existing Google Compute Engine VM, plus an offline generator for Outline Shadowsocks, Prometheus, and Grafana. It uses only Python's standard library and local HTML/CSS/JavaScript. It does not provision hosts, deploy over a network, install agents, fetch subscriptions, authenticate users, or provide a control plane.
+Keel is a Chinese-first local console for one existing Google Compute Engine VM, plus an offline generator for Outline Shadowsocks, Prometheus, and Grafana. The local console and offline generator use the Python standard library. Optional host installation and client verification are separate operator tools.
+
+## Client and account setup
+
+For a new client or a new Google account, start at [AGENTS.md](./AGENTS.md) and follow the [operator runbook](./docs/agent-onboarding.md). It covers credit verification, an isolated Google Cloud login, a dedicated Singapore VM, HTTPS subscription delivery and a client traffic check. On a fresh Debian 13 x86-64 host, the explicit installer configures Outline, Prometheus and authenticated Grafana. Reuse a free device slot or add a new one on an installer-managed host. Ordinary clients only need the shared subscription and their assigned slot.
 
 ## Requirements
 
 - Python 3.9 or newer; no pip packages.
 - An existing VM and authenticated `gcloud` for status, metrics, start, and stop.
-- On the proxy host: `outline-ss-server` v1.9 or newer, Prometheus, `node_exporter`, and Grafana, provisioned separately by the host owner.
+- On the proxy host: `outline-ss-server` v1.9 or newer, Prometheus, `node_exporter`, and Grafana. The runbook includes a fresh-host installer.
 - One available public port for Outline TCP and UDP. Keep Prometheus, node_exporter, and Outline metrics on loopback.
 
 ## Generate Outline and the shared subscription
@@ -38,7 +42,7 @@ Both files are JSON-encoded YAML, which the relevant YAML parsers accept. Rerunn
 
 ### Use one URL on all devices
 
-Publish the same `clash.yaml` at one HTTPS URL through static hosting that the host owner already controls. Keel deliberately does not serve or fetch that URL. Import the same subscription in every Clash/Mihomo client, select that device's own named node in `Keel Outline` once, and retain the client's local profile/cache so `store-selected` can restore it.
+Publish the same `clash.yaml` at one HTTPS URL through static hosting that the host owner already controls. The fresh-host installer can serve this file through nginx; the local console runs independently. Import the same subscription in every Clash/Mihomo client, select that device's own named node in `Keel Outline` once, and retain the client's local profile/cache so `store-selected` can restore it.
 
 **Security boundary:** every subscription contains every device's secret. Any device or person with the URL can read all credentials; this is not per-device isolation or revocation. Treat the URL as a bearer secret, use an unguessable path and existing distribution controls, and rotate all exposed keys when the subscription leaks.
 

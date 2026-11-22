@@ -12,3 +12,10 @@ secrets.json
 __pycache__/
 *.py[cod]
 .pytest_cache/
+
+# Private installer inventory, client delivery and login state
+inventory.json
+delivery.json
+access.json
+iap_key
+iap_key.pub

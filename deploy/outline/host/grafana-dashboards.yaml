@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: Keel
+    orgId: 1
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 10
+    options:
+      path: /var/lib/keel-dashboards

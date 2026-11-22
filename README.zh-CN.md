@@ -2,7 +2,11 @@
 
 [English](./README.md) | 简体中文
 
-Keel 是一个中文优先的本地控制台，用于管理一台现有 Google Compute Engine 虚拟机，并提供 Outline Shadowsocks、Prometheus 与 Grafana 的离线生成器。项目仅使用 Python 标准库和本地 HTML／CSS／JavaScript，不负责主机开通、网络部署、代理安装、订阅抓取、用户认证或控制平面。
+Keel 是一个中文优先的本地控制台，用于管理一台现有 Google Compute Engine 虚拟机，并提供 Outline Shadowsocks、Prometheus 与 Grafana 的离线生成器。本地控制台与离线生成器使用 Python 标准库。主机安装和客户端验收使用独立的运维工具。
+
+## 新客户端与新账号配置
+
+新设备接入或新 Google 账号独立部署，请从 [AGENTS.md](./AGENTS.md) 进入[配置手册](./docs/agent-onboarding.md)。手册覆盖赠金核验、独立的 Google Cloud 登录环境、新加坡实例、HTTPS 订阅交付和客户端流量验证。全新的 Debian 13 x86-64 主机可用安装脚本配置 Outline、Prometheus 与需要登录的 Grafana。已有空槽位可直接分配，在脚本管理的主机上也可以新增槽位。普通代理客户端只需要共享订阅和分配给它的设备名。
 
 ## 前置条件
 
@@ -38,7 +42,7 @@ python3 deploy/outline/generate.py \
 
 ### 所有设备使用同一个 URL
 
-通过主机负责人已有的静态托管，将同一份 `clash.yaml` 发布到一个 HTTPS URL。Keel 有意不提供此 URL 的服务或抓取功能。每台 Clash／Mihomo 设备导入同一订阅，在 `Keel Outline` 中选择自己的命名节点一次，并保留客户端本地配置／缓存，让 `store-selected` 恢复选择。
+通过主机负责人已有的静态托管，将同一份 `clash.yaml` 发布到一个 HTTPS URL。新主机安装脚本可通过 nginx 托管该订阅，本地控制台独立运行。每台 Clash／Mihomo 设备导入同一订阅，在 `Keel Outline` 中选择自己的命名节点一次，并保留客户端本地配置／缓存，让 `store-selected` 恢复选择。
 
 **安全边界：**每份订阅都包含所有设备的 secret。持有 URL 的任何设备或人员都能读取全部凭据；这不是设备间隔离或单设备吊销机制。请将 URL 视为持有即用的机密，使用不可猜测的路径和已有分发控制；订阅泄漏后应轮换所有已暴露密钥。
 
