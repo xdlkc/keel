@@ -58,13 +58,16 @@ Install the generated `outline.yml` as `/etc/keel-outline/outline.yml` with owne
 
 For Grafana on the same host, install [`grafana-datasource.yml`](./deploy/outline/grafana-datasource.yml) in its datasource provisioning directory. It creates a Prometheus datasource with UID `keel-prom` at `http://127.0.0.1:9090`. Import [`grafana-dashboard.json`](./deploy/outline/grafana-dashboard.json); its UID is `keel-outline`, so its normal path is `/d/keel-outline/keel-outline`. Use Grafana's existing login and an existing HTTPS reverse proxy for remote access; Keel adds no authentication or public metrics listener.
 
-The dashboard has:
+The dashboard has native sections for device/key detail, host overview, pressure/disk, and network/TCP:
 
-- An All-enabled, multi-select `device` variable backed by `access_key`.
-- Client-side rates in bytes/second using `rate(...[$__rate_interval])`, and estimated selected-range volume in bytes using `increase(...[$__range])`.
-- Only `shadowsocks_data_bytes` directions `c>p` and `c<p`, and protocols `tcp` and `udp`, grouped by `access_key`, `dir`, and `proto`. Server-side directions are excluded to avoid double counting. TCP byte counters update when a connection closes, so an ongoing transfer can appear later as a spike.
-- Availability from `up`, CPU, memory, root disk, and per-interface receive/transmit network rates from standard node_exporter series. Network rates are bytes/second and interfaces are not summed.
-- No hard-coded scrape job or instance values and no zero fallback for absent series; missing data stays “No data.”
+- An All-enabled, multi-select `device` variable lists observed `access_key` values. Configured keys are not a physical-device inventory or a device count.
+- Client-side rates in bytes/second use `rate(...[$__rate_interval])`; estimated selected-range volume in bytes uses `increase(...[$__range])`.
+- Only `shadowsocks_data_bytes` directions `c>p` and `c<p`, and protocols `tcp` and `udp`, are grouped by `access_key`, `dir`, and `proto`. Server-side directions are excluded to avoid double counting. TCP byte counters update when a connection closes, so an ongoing transfer can appear later as a spike.
+- For selected non-empty authenticated keys, `increase(shadowsocks_tunnel_time_seconds{access_key=~"$device",access_key!=""}[$__range])` estimates tunnel time in seconds, and `shadowsocks_tcp_connections_closed` counts closed TCP connections by `access_key` and `status` over the selected range. The native tunnel counter sums active key/source-IP durations, so concurrent sources can accumulate more than wall-clock time; it is not physical device uptime, online status, or a last-seen indicator.
+- Host panels ignore `device`. They cover host uptime, visible vCPUs and RAM, 1/5/15-minute load divided by visible vCPUs, CPU modes including iowait and steal, memory available, CPU/memory/IO PSI, OOM kills, and root filesystem space and inodes.
+- Disk panels show separate read/write throughput, IOPS, mean latency in milliseconds, and busy time without summing devices. Generic filters exclude loop, RAM, optical, device-mapper, RAID, zram, NBD/RBD, and common partition devices. A mean read or write latency series is omitted when its window has zero corresponding operations rather than reporting a fake zero.
+- Network panels retain per-interface rates and add non-loopback errors/drops, TCP retransmits, and available TCP inuse/time-wait socket gauges.
+- No scrape job or instance value is hard-coded, and absent series receive no zero fallback; missing optional collector data stays “No data.” The dashboard does not invent source-IP inventories, OS or hardware models, or physical-device presence.
 
 ## Local VM console
 
