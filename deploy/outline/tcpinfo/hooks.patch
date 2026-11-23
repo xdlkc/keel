@@ -1,0 +1,199 @@
+diff --git a/cmd/outline-ss-server/main.go b/cmd/outline-ss-server/main.go
+index 5d8d534..20c7948 100644
+--- a/cmd/outline-ss-server/main.go
++++ b/cmd/outline-ss-server/main.go
+@@ -522,6 +522,7 @@ func main() {
+ 	if err != nil {
+ 		slog.Error("Failed to create Outline Prometheus service metrics. Aborting.", "err", err)
+ 	}
++	prometheus.DefaultRegisterer.MustRegister(serviceMetrics.TCPInfoCollector())
+ 	r := prometheus.WrapRegistererWithPrefix("shadowsocks_", prometheus.DefaultRegisterer)
+ 	r.MustRegister(serverMetrics, serviceMetrics)
+ 
+diff --git a/go.mod b/go.mod
+index f708df7..cdebb8e 100644
+--- a/go.mod
++++ b/go.mod
+@@ -16,6 +16,7 @@ require (
+ 	github.com/shadowsocks/go-shadowsocks2 v0.1.5
+ 	github.com/stretchr/testify v1.10.0
+ 	golang.org/x/crypto v0.32.0
++	golang.org/x/sys v0.29.0
+ 	golang.org/x/term v0.28.0
+ 	gopkg.in/yaml.v3 v3.0.1
+ )
+@@ -263,7 +264,6 @@ require (
+ 	golang.org/x/net v0.34.0 // indirect
+ 	golang.org/x/oauth2 v0.25.0 // indirect
+ 	golang.org/x/sync v0.10.0 // indirect
+-	golang.org/x/sys v0.29.0 // indirect
+ 	golang.org/x/text v0.21.0 // indirect
+ 	golang.org/x/time v0.9.0 // indirect
+ 	golang.org/x/tools v0.29.0 // indirect
+diff --git a/prometheus/metrics.go b/prometheus/metrics.go
+index ffc2a7d..df2a7ed 100644
+--- a/prometheus/metrics.go
++++ b/prometheus/metrics.go
+@@ -98,10 +98,13 @@ type tcpConnMetrics struct {
+ 	tcpServiceMetrics *tcpServiceMetrics
+ 	tunnelTimeMetrics *tunnelTimeMetrics
+ 
+-	localAddr  net.Addr
+-	clientAddr net.Addr
+-	clientInfo ipinfo.IPInfo
+-	accessKey  string
++	localAddr     net.Addr
++	clientAddr    net.Addr
++	clientConn    net.Conn
++	clientInfo    ipinfo.IPInfo
++	accessKey     string
++	deviceTCPInfo *metrics.TCPInfoStream
++	sourceTCPInfo *metrics.TCPInfoStream
+ }
+ 
+ var _ service.TCPConnMetrics = (*tcpConnMetrics)(nil)
+@@ -113,19 +116,50 @@ func newTCPConnMetrics(tcpServiceMetrics *tcpServiceMetrics, tunnelTimeMetrics *
+ 		tunnelTimeMetrics: tunnelTimeMetrics,
+ 		localAddr:         clientConn.LocalAddr(),
+ 		clientAddr:        clientConn.RemoteAddr(),
++		clientConn:        clientConn,
+ 		clientInfo:        clientInfo,
+ 	}
+ }
+ 
+ func (cm *tcpConnMetrics) AddAuthentication(accessKey string) {
+ 	cm.accessKey = accessKey
++	if cm.deviceTCPInfo != nil {
++		cm.deviceTCPInfo.Close()
++	}
++	cm.deviceTCPInfo = cm.tcpServiceMetrics.tcpInfo.AddDevice(accessKey, cm.clientConn)
+ 	ipKey, err := toIPKey(cm.clientAddr, accessKey)
+ 	if err == nil {
+ 		cm.tunnelTimeMetrics.startConnection(*ipKey)
+ 	}
+ }
+ 
++func (cm *tcpConnMetrics) AddTargetConnection(conn net.Conn) {
++	if cm.accessKey == "" {
++		return
++	}
++	if cm.sourceTCPInfo != nil {
++		cm.sourceTCPInfo.Close()
++	}
++	cm.sourceTCPInfo = cm.tcpServiceMetrics.tcpInfo.AddSource(cm.accessKey, conn)
++}
++
++func (cm *tcpConnMetrics) AddTargetClose() {
++	if cm.sourceTCPInfo != nil {
++		cm.sourceTCPInfo.Close()
++		cm.sourceTCPInfo = nil
++	}
++}
++
++func (cm *tcpConnMetrics) CloseDeviceSample() {
++	if cm.deviceTCPInfo != nil {
++		cm.deviceTCPInfo.Close()
++		cm.deviceTCPInfo = nil
++	}
++}
++
+ func (cm *tcpConnMetrics) AddClose(status string, data metrics.ProxyMetrics, duration time.Duration) {
++	cm.CloseDeviceSample()
++	cm.AddTargetClose()
+ 	cm.tcpServiceMetrics.proxyCollector.addClientTarget(data.ClientProxy, data.ProxyTarget, cm.accessKey, cm.clientInfo)
+ 	cm.tcpServiceMetrics.proxyCollector.addTargetClient(data.TargetProxy, data.ProxyClient, cm.accessKey, cm.clientInfo)
+ 	cm.tcpServiceMetrics.closeConnection(status, duration, cm.accessKey, cm.clientInfo)
+@@ -145,6 +179,7 @@ func (cm *tcpConnMetrics) AddProbe(status, drainResult string, clientProxyBytes
+ 
+ type tcpServiceMetrics struct {
+ 	proxyCollector *proxyCollector
++	tcpInfo        *metrics.TCPInfoCollector
+ 	// NOTE: New metrics need to be added to `newTCPCollector()`, `Describe()` and `Collect()`.
+ 	probes               *prometheus.HistogramVec
+ 	openConnections      *prometheus.CounterVec
+@@ -168,6 +203,7 @@ func newTCPCollector() (*tcpServiceMetrics, error) {
+ 	}
+ 	return &tcpServiceMetrics{
+ 		proxyCollector: proxyCollector,
++		tcpInfo:        metrics.NewTCPInfoCollector(),
+ 		timeToCipherMs: timeToCipherVec,
+ 		probes: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+ 			Namespace: namespace,
+@@ -523,6 +559,10 @@ func (m *serviceMetrics) AddOpenUDPAssociation(clientConn net.Conn) service.UDPA
+ 	return newUDPAssociationMetrics(m.udpServiceMetrics, m.tunnelTimeMetrics, clientAddr, clientInfo)
+ }
+ 
++func (m *serviceMetrics) TCPInfoCollector() prometheus.Collector {
++	return m.tcpServiceMetrics.tcpInfo
++}
++
+ func (m *serviceMetrics) AddTCPCipherSearch(accessKeyFound bool, timeToCipher time.Duration) {
+ 	m.tcpServiceMetrics.AddCipherSearch(accessKeyFound, timeToCipher)
+ }
+diff --git a/service/tcp.go b/service/tcp.go
+index 50b6b0d..66a9808 100644
+--- a/service/tcp.go
++++ b/service/tcp.go
+@@ -42,6 +42,11 @@ type TCPConnMetrics interface {
+ 	AddProbe(status, drainResult string, clientProxyBytes int64)
+ }
+ 
++type targetTCPInfoMetrics interface {
++	AddTargetConnection(conn net.Conn)
++	AddTargetClose()
++}
++
+ func remoteIP(conn net.Conn) netip.Addr {
+ 	addr := conn.RemoteAddr()
+ 	if addr == nil {
+@@ -283,13 +288,18 @@ func getProxyRequest(clientConn transport.StreamConn) (string, error) {
+ 	return tgtAddr.String(), nil
+ }
+ 
+-func proxyConnection(l *slog.Logger, ctx context.Context, dialer transport.StreamDialer, tgtAddr string, clientConn transport.StreamConn) *onet.ConnectionError {
++func proxyConnection(l *slog.Logger, ctx context.Context, dialer transport.StreamDialer, tgtAddr string, clientConn transport.StreamConn, onTargetClose func()) *onet.ConnectionError {
+ 	tgtConn, dialErr := dialer.DialStream(ctx, tgtAddr)
+ 	if dialErr != nil {
+ 		// We don't drain so dial errors and invalid addresses are communicated quickly.
+ 		return ensureConnectionError(dialErr, "ERR_CONNECT", "Failed to connect to target")
+ 	}
+-	defer tgtConn.Close()
++	defer func() {
++		if onTargetClose != nil {
++			onTargetClose()
++		}
++		tgtConn.Close()
++	}()
+ 	l.LogAttrs(nil, slog.LevelDebug, "Proxy connection.", slog.String("client", clientConn.RemoteAddr().String()), slog.String("target", tgtConn.RemoteAddr().String()))
+ 
+ 	fromClientErrCh := make(chan error)
+@@ -339,6 +349,10 @@ func (h *streamHandler) handleConnection(ctx context.Context, outerConn transpor
+ 		return authErr
+ 	}
+ 	connMetrics.AddAuthentication(id)
++	if device, ok := connMetrics.(interface{ CloseDeviceSample() }); ok {
++		defer device.CloseDeviceSample()
++	}
++	targetMetrics, _ := connMetrics.(targetTCPInfoMetrics)
+ 
+ 	// Read target address and dial it.
+ 	tgtAddr, err := getProxyRequest(innerConn)
+@@ -355,10 +369,17 @@ func (h *streamHandler) handleConnection(ctx context.Context, outerConn transpor
+ 		if err != nil {
+ 			return nil, err
+ 		}
++		if targetMetrics != nil {
++			targetMetrics.AddTargetConnection(tgtConn)
++		}
+ 		tgtConn = metrics.MeasureConn(tgtConn, &proxyMetrics.ProxyTarget, &proxyMetrics.TargetProxy)
+ 		return tgtConn, nil
+ 	})
+-	return proxyConnection(h.logger, ctx, dialer, tgtAddr, innerConn)
++	var onTargetClose func()
++	if targetMetrics != nil {
++		onTargetClose = targetMetrics.AddTargetClose
++	}
++	return proxyConnection(h.logger, ctx, dialer, tgtAddr, innerConn, onTargetClose)
+ }
+ 
+ // Keep the connection open until we hit the authentication deadline to protect against probing attacks

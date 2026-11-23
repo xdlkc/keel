@@ -19,3 +19,6 @@ delivery.json
 access.json
 iap_key
 iap_key.pub
+
+# Operator-built Linux release artifact
+/deploy/outline/host/outline-ss-server-linux-amd64

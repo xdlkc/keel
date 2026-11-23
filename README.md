@@ -64,17 +64,22 @@ For Grafana on the same host, install [`grafana-datasource.yml`](./deploy/outlin
 
 The host installer provisions [Node Exporter Full, revision 45](https://grafana.com/grafana/dashboards/1860-node-exporter-full/) alongside Keel. For manual setup, import [the same revision](https://grafana.com/api/dashboards/1860/revisions/45/download) and select Keel Prometheus. The dashboard link opens the template with the current time range.
 
-The device, host, disk, and network panels use these measurements.
+The device, TCP leg, host, disk, and network panels use these measurements.
 
-- The device picker and panels show keys with observed client-side traffic in the selected interval. An active series keeps its idle periods in the rate chart. A missing device can also indicate missing samples.
-- Rates use bytes per second. Volume shows the estimated byte increase during the selected interval.
-- Only `shadowsocks_data_bytes` directions `c>p` and `c<p`, and protocols `tcp` and `udp`, are grouped by `access_key`, `dir`, and `proto`. Server-side directions are excluded to avoid double counting. TCP byte counters update when a connection closes, so an ongoing transfer can appear later as a spike.
+- The device picker and Outline interval-detail panels include keys with a positive selected-interval increase in either historical Outline client traffic or `keel_tcp_download_bytes_total`. A first long-lived download can therefore be selected before Outline closes the connection. An active series keeps its idle periods in the rate chart, but missing samples can still hide a device.
+- All panels follow Grafana's native selected time range; rolling rates use `$__rate_interval`. Byte rates use bytes per second, RTT uses seconds, and volume shows the estimated byte increase during the selected interval.
+- Only `shadowsocks_data_bytes` directions `c>p` and `c<p`, and protocols `tcp` and `udp`, are grouped by `access_key`, `dir`, and `proto`. Server-side directions are excluded to avoid double counting. These Outline TCP byte counters update when a connection closes, so an ongoing transfer can appear later as a spike.
+- The native **TCP 链路诊断** row filters by `access_key`. RTT and download series add only the `leg` label (`source` or `device`), never a source-IP label. Live mean RTT divides summed `keel_tcp_rtt_seconds_sum` by positive summed `keel_tcp_rtt_samples`; both gauges describe currently open sockets.
+- The download panel uses `rate(keel_tcp_download_bytes_total)` to compare source-leg payload received from the origin with device-leg encrypted TCP bytes acknowledged by the client. These are deliberately different byte semantics.
+- The retransmission panel uses `rate(keel_tcp_device_retrans_bytes_total)` for encrypted TCP bytes retransmitted from the VPS toward the client. The backlog panel sums the `keel_tcp_device_notsent_bytes` gauge for currently unsent bytes in the same direction. Missing samples remain gaps rather than zeroes.
 - Tunnel time estimates active key/source-IP seconds. Concurrent connections from distinct source IPs can accumulate more than wall-clock time. TCP closes are grouped by key and status.
 - Host panels ignore `device`. They cover host uptime, visible vCPUs and RAM, 1/5/15-minute load divided by visible vCPUs, CPU modes including iowait and steal, memory available, CPU/memory/IO PSI, OOM kills, and root filesystem space and inodes.
 - Disk panels show separate read/write throughput, IOPS, mean latency in milliseconds, and busy time without summing devices. Generic filters exclude loop, RAM, optical, device-mapper, RAID, zram, NBD/RBD, and common partition devices. A mean read or write latency series is omitted when its window has zero corresponding operations rather than reporting a fake zero.
 - Network panels retain per-interface rates and add non-loopback errors/drops, TCP retransmits, and available TCP inuse/time-wait socket gauges.
 - Protocol-health panels add TCP retransmits as a percentage of sent segments with a positive-denominator guard, SYN retransmits and timeouts, listen overflows/drops, UDP datagrams and receive/send buffer errors, and Outline UDP NAT entry additions/removals. These are not per-device series.
 - No scrape job or instance value is hard-coded, and absent series receive no zero fallback; missing optional collector data stays “No data.” The dashboard does not invent source-IP inventories, OS or hardware models, or physical-device presence.
+
+The TCP diagnostics also keep a stalled device visible while its send queue has a backlog or retransmitted bytes increase. RTT is averaged over live connections at each scrape. Short connections may finish between scrapes, and acknowledgements arriving after socket close are outside the final sample. The installer uses the [reviewed Outline build](./deploy/outline/tcpinfo/build.sh). Follow the [operator runbook](./docs/agent-onboarding.md) when updating a manually managed host.
 
 ## Local VM console
 

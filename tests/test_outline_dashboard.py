@@ -44,7 +44,8 @@ class OutlineDashboardTests(unittest.TestCase):
         self.assertIn('access_key!=""', query)
         self.assertIn('dir=~"^(c>p|c<p)$"', query)
         self.assertIn('proto=~"^(tcp|udp)$"', query)
-        self.assertIn("[$__range] @ ${__to:date:seconds}", query)
+        self.assertIn(" or sum by (access_key) (increase(keel_tcp_download_bytes_total{", query)
+        self.assertEqual(query.count("[$__range] @ ${__to:date:seconds}"), 4)
         self.assertTrue(query.endswith("> 0)"))
         self.assertEqual(device["regex"], r'/.*access_key="([^"]+)".*/')
         self.assertEqual(device["refresh"], 2)
@@ -127,11 +128,12 @@ class OutlineDashboardTests(unittest.TestCase):
             self.assertFalse(target["range"])
             self.assertIn("and on(access_key)", expression)
             self.assertIn("increase(shadowsocks_data_bytes{", expression)
+            self.assertIn("or (sum by (access_key) (increase(keel_tcp_download_bytes_total{", expression)
             self.assertIn('dir=~"^(c>p|c<p)$"', expression)
             self.assertIn('proto=~"^(tcp|udp)$"', expression)
-            self.assertIn("[$__range] @ ${__to:date:seconds}", expression)
+            self.assertEqual(expression.count("[$__range] @ ${__to:date:seconds}"), 3)
             self.assertIn("> 0)", expression)
-            self.assertEqual(expression.count('access_key=~"$device"'), 2)
+            self.assertEqual(expression.count('access_key=~"$device"'), 3)
         self.assertIn("{{status}}", closed["legendFormat"])
         self.assertIn("{{access_key}}", closed["legendFormat"])
 
@@ -302,12 +304,103 @@ class OutlineDashboardTests(unittest.TestCase):
                 self.assertEqual(target["expr"], f"rate({metric}[$__rate_interval])")
                 self.assertNotIn("$device", target["expr"])
 
+    def test_tcp_leg_diagnostics_use_live_socket_metrics(self):
+        row_index = next(
+            index for index, panel in enumerate(self.panels)
+            if panel["type"] == "row" and panel["title"] == "TCP 链路诊断"
+        )
+        self.assertGreater(row_index, 0)
+        self.assertEqual(self.panels[row_index - 1]["title"], "所选时段 TCP 关闭连接")
+        self.assertEqual(self.panels[row_index + 5]["title"], "主机概览")
+
+        panels = self.panels[row_index + 1:row_index + 5]
+        self.assertEqual(
+            [panel["title"] for panel in panels],
+            ["双链路实时 RTT", "双链路下载速率", "设备链路重传字节速率", "设备链路未发送字节"],
+        )
+        for panel in panels:
+            self.assertEqual(panel["type"], "timeseries")
+            self.assertEqual(len(panel["targets"]), 1)
+            self.assertNotIn("timeFrom", panel)
+            self.assertNotIn("timeShift", panel)
+            self.assertNotIn("hideTimeOverride", panel)
+            custom = panel["fieldConfig"]["defaults"]["custom"]
+            self.assertFalse(custom["spanNulls"])
+            self.assertFalse(custom["insertNulls"])
+            target = panel["targets"][0]
+            self.assertTrue(target["range"])
+            self.assertFalse(target.get("instant", False))
+            expression = target["expr"]
+            self.assertIn('access_key=~"$device"', expression)
+            self.assertIn('access_key!=""', expression)
+            self.assertIn("and on(access_key)", expression)
+            self.assertIn("increase(keel_tcp_download_bytes_total{", expression)
+            self.assertIn("[$__range] @ ${__to:date:seconds}", expression)
+            self.assertIn("max_over_time(keel_tcp_device_notsent_bytes{", expression)
+            self.assertIn("increase(keel_tcp_device_retrans_bytes_total{", expression)
+            self.assertNotIn("dir=", expression)
+            self.assertNotIn("proto=", expression)
+            self.assertNotIn("source_ip", expression)
+            self.assertNotIn("src_ip", expression)
+            self.assertNotIn("client_ip", expression)
+
+        rtt, download, retrans, notsent = panels
+        rtt_expression = rtt["targets"][0]["expr"]
+        self.assertIn("sum by (access_key, leg) (keel_tcp_rtt_seconds_sum{", rtt_expression)
+        self.assertIn(") / (sum by (access_key, leg) (keel_tcp_rtt_samples{", rtt_expression)
+        self.assertIn("}) > 0)", rtt_expression)
+        self.assertNotIn("rate(keel_tcp_rtt", rtt_expression)
+        self.assertEqual(rtt["fieldConfig"]["defaults"]["unit"], "s")
+        self.assertIn("当前打开", rtt["description"])
+        self.assertIn("平均", rtt["description"])
+
+        download_expression = download["targets"][0]["expr"]
+        self.assertIn(
+            "sum by (access_key, leg) (rate(keel_tcp_download_bytes_total{",
+            download_expression,
+        )
+        self.assertIn("[$__rate_interval]", download_expression)
+        self.assertEqual(download["fieldConfig"]["defaults"]["unit"], "Bps")
+        self.assertIn("源站", download["description"])
+        self.assertIn("ACK", download["description"])
+        self.assertIn("加密", download["description"])
+
+        retrans_expression = retrans["targets"][0]["expr"]
+        self.assertIn(
+            "sum by (access_key) (rate(keel_tcp_device_retrans_bytes_total{",
+            retrans_expression,
+        )
+        self.assertIn("[$__rate_interval]", retrans_expression)
+        self.assertNotIn("leg", retrans_expression)
+        self.assertEqual(retrans["fieldConfig"]["defaults"]["unit"], "Bps")
+        self.assertIn("发往客户端", retrans["description"])
+        self.assertIn("重传", retrans["description"])
+
+        notsent_expression = notsent["targets"][0]["expr"]
+        self.assertIn("sum by (access_key) (keel_tcp_device_notsent_bytes{", notsent_expression)
+        self.assertNotIn("rate(keel_tcp_device_notsent_bytes", notsent_expression)
+        self.assertNotIn("leg", notsent_expression)
+        self.assertEqual(notsent["fieldConfig"]["defaults"]["unit"], "bytes")
+        self.assertIn("尚未发送", notsent["description"])
+        self.assertIn("发往客户端", notsent["description"])
+
+        for panel in (rtt, download):
+            expression = panel["targets"][0]["expr"]
+            self.assertIn('leg=~"^(source|device)$"', expression)
+            self.assertEqual(panel["targets"][0]["legendFormat"], "{{access_key}} · {{leg}}")
+        for panel in (retrans, notsent):
+            self.assertEqual(panel["targets"][0]["legendFormat"], "{{access_key}}")
+
     def test_native_rows_and_grid_do_not_overlap(self):
         self.assertEqual(
             [panel["title"] for panel in self.panels if panel["type"] == "row"],
-            ["设备与密钥", "主机概览", "压力与磁盘", "网络与 TCP", "协议健康"],
+            ["设备与密钥", "TCP 链路诊断", "主机概览", "压力与磁盘", "网络与 TCP", "协议健康"],
         )
         self.assertEqual(len({panel["id"] for panel in self.panels}), len(self.panels))
+        for panel in self.visual_panels:
+            self.assertNotIn("timeFrom", panel)
+            self.assertNotIn("timeShift", panel)
+            self.assertNotIn("hideTimeOverride", panel)
         occupied = []
         for panel in self.panels:
             position = panel["gridPos"]

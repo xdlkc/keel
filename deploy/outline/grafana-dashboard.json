@@ -2,7 +2,7 @@
   "annotations": {
     "list": []
   },
-  "description": "按认证密钥查看代理流量与隧道明细，并下钻主机资源、磁盘和网络。主机面板不随设备筛选。",
+  "description": "按认证密钥查看代理流量、双链路 TCP 诊断与隧道明细，并下钻主机资源、磁盘和网络。主机面板不随设备筛选。",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -289,7 +289,7 @@
         "type": "prometheus",
         "uid": "keel-prom"
       },
-      "description": "increase 估算所选时段的隧道计数器增量。原生计数器累加活动密钥／来源 IP 的持续时间，多来源会重复累计墙钟时间；不是物理设备开机时间。仅统计筛选后的非空认证密钥，仅显示同期有流量的设备。",
+      "description": "increase 估算所选时段的隧道计数器增量。原生计数器累加活动密钥／来源 IP 的持续时间，多来源会重复累计墙钟时间；不是物理设备开机时间。仅统计筛选后的非空认证密钥，仅显示同期有客户端流量或 TCP 下载字节的设备。",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -341,7 +341,7 @@
             "uid": "keel-prom"
           },
           "editorMode": "code",
-          "expr": "sum by (access_key) (increase(shadowsocks_tunnel_time_seconds{access_key=~\"$device\",access_key!=\"\"}[$__range] @ ${__to:date:seconds})) and on(access_key) (sum by (access_key) (increase(shadowsocks_data_bytes{access_key=~\"$device\",access_key!=\"\",dir=~\"^(c>p|c<p)$\",proto=~\"^(tcp|udp)$\"}[$__range] @ ${__to:date:seconds})) > 0)",
+          "expr": "sum by (access_key) (increase(shadowsocks_tunnel_time_seconds{access_key=~\"$device\",access_key!=\"\"}[$__range] @ ${__to:date:seconds})) and on(access_key) ((sum by (access_key) (increase(shadowsocks_data_bytes{access_key=~\"$device\",access_key!=\"\",dir=~\"^(c>p|c<p)$\",proto=~\"^(tcp|udp)$\"}[$__range] @ ${__to:date:seconds})) > 0) or (sum by (access_key) (increase(keel_tcp_download_bytes_total{access_key=~\"$device\",access_key!=\"\"}[$__range] @ ${__to:date:seconds})) > 0))",
           "legendFormat": "{{access_key}}",
           "range": false,
           "refId": "A",
@@ -356,7 +356,7 @@
         "type": "prometheus",
         "uid": "keel-prom"
       },
-      "description": "按状态统计所选时段内已关闭的 TCP 连接，仅包含筛选后的非空认证密钥，仅显示同期有流量的设备；不是在线连接数。",
+      "description": "按状态统计所选时段内已关闭的 TCP 连接，仅包含筛选后的非空认证密钥，仅显示同期有客户端流量或 TCP 下载字节的设备；不是在线连接数。",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -409,7 +409,7 @@
             "uid": "keel-prom"
           },
           "editorMode": "code",
-          "expr": "sum by (access_key, status) (increase(shadowsocks_tcp_connections_closed{access_key=~\"$device\",access_key!=\"\"}[$__range] @ ${__to:date:seconds})) and on(access_key) (sum by (access_key) (increase(shadowsocks_data_bytes{access_key=~\"$device\",access_key!=\"\",dir=~\"^(c>p|c<p)$\",proto=~\"^(tcp|udp)$\"}[$__range] @ ${__to:date:seconds})) > 0)",
+          "expr": "sum by (access_key, status) (increase(shadowsocks_tcp_connections_closed{access_key=~\"$device\",access_key!=\"\"}[$__range] @ ${__to:date:seconds})) and on(access_key) ((sum by (access_key) (increase(shadowsocks_data_bytes{access_key=~\"$device\",access_key!=\"\",dir=~\"^(c>p|c<p)$\",proto=~\"^(tcp|udp)$\"}[$__range] @ ${__to:date:seconds})) > 0) or (sum by (access_key) (increase(keel_tcp_download_bytes_total{access_key=~\"$device\",access_key!=\"\"}[$__range] @ ${__to:date:seconds})) > 0))",
           "legendFormat": "{{access_key}} · {{status}}",
           "range": false,
           "refId": "A",
@@ -426,6 +426,403 @@
         "w": 24,
         "x": 0,
         "y": 29
+      },
+      "id": 105,
+      "panels": [],
+      "title": "TCP 链路诊断",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keel-prom"
+      },
+      "description": "当前打开 TCP 套接字的平均 RTT：秒数总和 ÷ 正样本数。source 为源站侧，device 为客户端侧；连接关闭或采样缺失时不补零。",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 4,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "axisLabel": "seconds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s",
+          "min": 0,
+          "decimals": 4
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 30
+      },
+      "id": 32,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "keel-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (access_key, leg) (keel_tcp_rtt_seconds_sum{access_key=~\"$device\",access_key!=\"\",leg=~\"^(source|device)$\"}) / (sum by (access_key, leg) (keel_tcp_rtt_samples{access_key=~\"$device\",access_key!=\"\",leg=~\"^(source|device)$\"}) > 0) and on(access_key) (sum by (access_key) (increase(keel_tcp_download_bytes_total{access_key=~\"$device\",access_key!=\"\"}[$__range] @ ${__to:date:seconds})) > 0 or max by (access_key) (max_over_time(keel_tcp_device_notsent_bytes{access_key=~\"$device\",access_key!=\"\"}[$__range] @ ${__to:date:seconds})) > 0 or max by (access_key) (increase(keel_tcp_device_retrans_bytes_total{access_key=~\"$device\",access_key!=\"\"}[$__range] @ ${__to:date:seconds})) > 0)",
+          "legendFormat": "{{access_key}} · {{leg}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "双链路实时 RTT",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keel-prom"
+      },
+      "description": "source 为 VPS 从源站接收的 payload 字节速率；device 为已被客户端 ACK 的加密 TCP 字节速率。两者口径不同，便于比较传输进度与协议开销。",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 4,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "axisLabel": "bytes/sec"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "Bps",
+          "min": 0,
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 30
+      },
+      "id": 33,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "keel-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (access_key, leg) (rate(keel_tcp_download_bytes_total{access_key=~\"$device\",access_key!=\"\",leg=~\"^(source|device)$\"}[$__rate_interval])) and on(access_key) (sum by (access_key) (increase(keel_tcp_download_bytes_total{access_key=~\"$device\",access_key!=\"\"}[$__range] @ ${__to:date:seconds})) > 0 or max by (access_key) (max_over_time(keel_tcp_device_notsent_bytes{access_key=~\"$device\",access_key!=\"\"}[$__range] @ ${__to:date:seconds})) > 0 or max by (access_key) (increase(keel_tcp_device_retrans_bytes_total{access_key=~\"$device\",access_key!=\"\"}[$__range] @ ${__to:date:seconds})) > 0)",
+          "legendFormat": "{{access_key}} · {{leg}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "双链路下载速率",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keel-prom"
+      },
+      "description": "VPS 在 device 链路发往客户端的加密 TCP 重传字节速率；不表示源站侧或客户端上行重传。",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 4,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "axisLabel": "bytes/sec"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "Bps",
+          "min": 0,
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 38
+      },
+      "id": 34,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "keel-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (access_key) (rate(keel_tcp_device_retrans_bytes_total{access_key=~\"$device\",access_key!=\"\"}[$__rate_interval])) and on(access_key) (sum by (access_key) (increase(keel_tcp_download_bytes_total{access_key=~\"$device\",access_key!=\"\"}[$__range] @ ${__to:date:seconds})) > 0 or max by (access_key) (max_over_time(keel_tcp_device_notsent_bytes{access_key=~\"$device\",access_key!=\"\"}[$__range] @ ${__to:date:seconds})) > 0 or max by (access_key) (increase(keel_tcp_device_retrans_bytes_total{access_key=~\"$device\",access_key!=\"\"}[$__range] @ ${__to:date:seconds})) > 0)",
+          "legendFormat": "{{access_key}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "设备链路重传字节速率",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keel-prom"
+      },
+      "description": "当前 device 链路中 VPS 发往客户端、尚未发送的加密 TCP 字节总和；用于观察发送积压，采样缺失不补零。",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 4,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "axisLabel": "bytes"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "bytes",
+          "min": 0,
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 38
+      },
+      "id": 35,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "keel-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (access_key) (keel_tcp_device_notsent_bytes{access_key=~\"$device\",access_key!=\"\"}) and on(access_key) (sum by (access_key) (increase(keel_tcp_download_bytes_total{access_key=~\"$device\",access_key!=\"\"}[$__range] @ ${__to:date:seconds})) > 0 or max by (access_key) (max_over_time(keel_tcp_device_notsent_bytes{access_key=~\"$device\",access_key!=\"\"}[$__range] @ ${__to:date:seconds})) > 0 or max by (access_key) (increase(keel_tcp_device_retrans_bytes_total{access_key=~\"$device\",access_key!=\"\"}[$__range] @ ${__to:date:seconds})) > 0)",
+          "legendFormat": "{{access_key}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "设备链路未发送字节",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 46
       },
       "id": 101,
       "panels": [],
@@ -462,7 +859,7 @@
         "h": 4,
         "w": 8,
         "x": 0,
-        "y": 30
+        "y": 47
       },
       "id": 10,
       "options": {
@@ -529,7 +926,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 30
+        "y": 47
       },
       "id": 11,
       "options": {
@@ -596,7 +993,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 30
+        "y": 47
       },
       "id": 12,
       "options": {
@@ -663,7 +1060,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 30
+        "y": 47
       },
       "id": 13,
       "options": {
@@ -744,7 +1141,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 34
+        "y": 51
       },
       "id": 4,
       "options": {
@@ -819,7 +1216,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 34
+        "y": 51
       },
       "id": 5,
       "options": {
@@ -910,7 +1307,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 42
+        "y": 59
       },
       "id": 14,
       "options": {
@@ -1027,7 +1424,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 42
+        "y": 59
       },
       "id": 15,
       "options": {
@@ -1122,7 +1519,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 50
+        "y": 67
       },
       "id": 16,
       "options": {
@@ -1196,7 +1593,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 50
+        "y": 67
       },
       "id": 6,
       "options": {
@@ -1270,7 +1667,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 50
+        "y": 67
       },
       "id": 17,
       "options": {
@@ -1313,7 +1710,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 58
+        "y": 75
       },
       "id": 102,
       "panels": [],
@@ -1381,7 +1778,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 59
+        "y": 76
       },
       "id": 18,
       "options": {
@@ -1498,7 +1895,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 59
+        "y": 76
       },
       "id": 19,
       "options": {
@@ -1593,7 +1990,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 67
+        "y": 84
       },
       "id": 20,
       "options": {
@@ -1699,7 +2096,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 67
+        "y": 84
       },
       "id": 21,
       "options": {
@@ -1805,7 +2202,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 75
+        "y": 92
       },
       "id": 22,
       "options": {
@@ -1912,7 +2309,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 75
+        "y": 92
       },
       "id": 23,
       "options": {
@@ -1953,7 +2350,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 83
+        "y": 100
       },
       "id": 103,
       "panels": [],
@@ -2003,7 +2400,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 84
+        "y": 101
       },
       "id": 7,
       "options": {
@@ -2107,7 +2504,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 84
+        "y": 101
       },
       "id": 24,
       "options": {
@@ -2235,7 +2632,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 92
+        "y": 109
       },
       "id": 25,
       "options": {
@@ -2330,7 +2727,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 92
+        "y": 109
       },
       "id": 26,
       "options": {
@@ -2382,7 +2779,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 100
+        "y": 117
       },
       "id": 104,
       "panels": [],
@@ -2434,7 +2831,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 101
+        "y": 118
       },
       "id": 27,
       "options": {
@@ -2513,7 +2910,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 101
+        "y": 118
       },
       "id": 28,
       "options": {
@@ -2603,7 +3000,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 101
+        "y": 118
       },
       "id": 29,
       "options": {
@@ -2693,7 +3090,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 108
+        "y": 125
       },
       "id": 30,
       "options": {
@@ -2805,7 +3202,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 108
+        "y": 125
       },
       "id": 31,
       "options": {
@@ -2876,8 +3273,8 @@
           "type": "prometheus",
           "uid": "keel-prom"
         },
-        "definition": "query_result(sum by (access_key) (increase(shadowsocks_data_bytes{access_key!=\"\",dir=~\"^(c>p|c<p)$\",proto=~\"^(tcp|udp)$\"}[$__range] @ ${__to:date:seconds})) > 0)",
-        "description": "按 access_key 筛选，仅列出所选时段客户端 TCP/UDP 字节增量为正的密钥；配置密钥不等同于物理设备。",
+        "definition": "query_result(sum by (access_key) (increase(shadowsocks_data_bytes{access_key!=\"\",dir=~\"^(c>p|c<p)$\",proto=~\"^(tcp|udp)$\"}[$__range] @ ${__to:date:seconds})) > 0 or sum by (access_key) (increase(keel_tcp_download_bytes_total{access_key!=\"\"}[$__range] @ ${__to:date:seconds})) > 0 or max by (access_key) (max_over_time(keel_tcp_device_notsent_bytes{access_key!=\"\"}[$__range] @ ${__to:date:seconds})) > 0 or max by (access_key) (increase(keel_tcp_device_retrans_bytes_total{access_key!=\"\"}[$__range] @ ${__to:date:seconds})) > 0)",
+        "description": "按 access_key 筛选，仅列出所选时段客户端 TCP/UDP 字节或实时 TCP 下载字节增量为正的密钥；长连接无需等待 Outline 关闭连接。配置密钥不等同于物理设备。",
         "hide": 0,
         "includeAll": true,
         "label": "设备",
@@ -2885,7 +3282,7 @@
         "name": "device",
         "options": [],
         "query": {
-          "query": "query_result(sum by (access_key) (increase(shadowsocks_data_bytes{access_key!=\"\",dir=~\"^(c>p|c<p)$\",proto=~\"^(tcp|udp)$\"}[$__range] @ ${__to:date:seconds})) > 0)",
+          "query": "query_result(sum by (access_key) (increase(shadowsocks_data_bytes{access_key!=\"\",dir=~\"^(c>p|c<p)$\",proto=~\"^(tcp|udp)$\"}[$__range] @ ${__to:date:seconds})) > 0 or sum by (access_key) (increase(keel_tcp_download_bytes_total{access_key!=\"\"}[$__range] @ ${__to:date:seconds})) > 0 or max by (access_key) (max_over_time(keel_tcp_device_notsent_bytes{access_key!=\"\"}[$__range] @ ${__to:date:seconds})) > 0 or max by (access_key) (increase(keel_tcp_device_retrans_bytes_total{access_key!=\"\"}[$__range] @ ${__to:date:seconds})) > 0)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,

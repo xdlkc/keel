@@ -1,0 +1,2 @@
+# Unified diff context retains the upstream Go indentation.
+deploy/outline/tcpinfo/hooks.patch -whitespace

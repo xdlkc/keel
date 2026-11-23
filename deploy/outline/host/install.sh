@@ -19,12 +19,6 @@ acquire_lock
 detect_managed
 check_path_shapes
 preflight_unmanaged "$SS_PORT"
-if (( MANAGED == 0 )); then
-    install -d -m 0700 -o root -g root /etc/keel-outline
-fi
-"${HOSTCTL[@]}" begin "$PUBLIC_IPV4" "$SS_PORT" "$DEVICE_ID" "$LABEL"
-"${HOSTCTL[@]}" access
-
 WORK=$(make_workdir keel-outline-install)
 cleanup() {
     local rc=$?
@@ -38,6 +32,19 @@ cleanup() {
     exit "$rc"
 }
 trap cleanup EXIT
+
+expected_build=$(cat "$OUTLINE_DIR/tcpinfo/build.sha256")
+if ! printf '%s  /usr/local/bin/outline-ss-server\n' "$expected_build" | sha256sum --check --status 2>/dev/null; then
+    [[ -f "$HOST_DIR/outline-ss-server-linux-amd64" ]] || fail "Build and upload the reviewed Linux binary first (docs/agent-onboarding.md)."
+    install -m 0755 "$HOST_DIR/outline-ss-server-linux-amd64" "$WORK/outline-ss-server"
+    printf '%s  %s\n' "$expected_build" "$WORK/outline-ss-server" | sha256sum --check --status || fail "Staged Outline checksum differs from the reviewed build."
+fi
+if (( MANAGED == 0 )); then
+    install -d -m 0700 -o root -g root /etc/keel-outline
+fi
+"${HOSTCTL[@]}" begin "$PUBLIC_IPV4" "$SS_PORT" "$DEVICE_ID" "$LABEL"
+"${HOSTCTL[@]}" access
+
 
 python3 "$OUTLINE_DIR/enroll.py" \
     --inventory /etc/keel-outline/inventory.json \
@@ -101,17 +108,7 @@ if not (5, 4) <= version < (6, 0):
     raise SystemExit(1)
 PY
 
-outline_version=''
-if [[ -x /usr/local/bin/outline-ss-server ]]; then
-    outline_version=$(/usr/local/bin/outline-ss-server -version 2>&1 || true)
-fi
-if [[ $outline_version != *1.9.2* ]]; then
-    release_url=https://github.com/OutlineFoundation/tunnel-server/releases/download/v1.9.2
-    archive=outline-ss-server_1.9.2_linux_x86_64.tar.gz
-    "${CURL[@]}" "$release_url/$archive" -o "$WORK/outline.tar.gz"
-    printf '%s  outline.tar.gz\n' 6166cb676334e9f8a3296621d6a29b0e0cce36e4b0a72600b3309b07a21f5b8c >"$WORK/archive.sha256"
-    (cd "$WORK" && run_logged sha256sum -c archive.sha256)
-    tar -xzf "$WORK/outline.tar.gz" -C "$WORK" outline-ss-server
+if [[ -f "$WORK/outline-ss-server" ]]; then
     install -m 0755 "$WORK/outline-ss-server" /usr/local/bin/outline-ss-server
 fi
 

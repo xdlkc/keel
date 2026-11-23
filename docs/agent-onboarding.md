@@ -97,6 +97,9 @@ remote_dir="keel-releases/$release"
 ssh_vm 'sudo -n true'
 git archive HEAD deploy/outline | ssh_vm "set -eu; umask 077; mkdir -p '$remote_dir'; tar -xf - -C '$remote_dir'"
 quote_args() { python3 -c 'import shlex,sys; print(" ".join(map(shlex.quote,sys.argv[1:])))' "$@"; }
+# 以下三行仅用于首次安装。构建机需要 Git、Python 3 和支持自动选择工具链的 Go 1.21+。
+bash deploy/outline/tcpinfo/build.sh "$STATE/outline-ss-server"
+ssh_vm "umask 077; cat > '$remote_dir/deploy/outline/host/outline-ss-server-linux-amd64'" < "$STATE/outline-ss-server"
 ssh_vm "sudo bash $(quote_args "$remote_dir/deploy/outline/host/install.sh" "$IP" "$PORT" "$DEVICE_ID" "$LABEL")"
 ```
 
@@ -106,7 +109,7 @@ ssh_vm "sudo bash $(quote_args "$remote_dir/deploy/outline/host/install.sh" "$IP
 
 **使用现有槽位。** 从用户的密码管理器或之前保存的私有交付文件取同一条 HTTPS 订阅，确认该槽位尚未分配。已有服务器的这一步不需要 SSH。Clash Verge 在「订阅」中导入该地址并激活；在「代理 → Keel Outline」选本机显示名一次。手机使用支持 Clash/Mihomo 配置及本地选择缓存的客户端。保留用户原有订阅。原生 Outline Client 使用单个访问密钥，不能直接导入这个多节点 Clash 订阅。
 
-**从一台新的操作电脑管理已有服务器。** 若只导入已分配的订阅，跳过本段。向用户取得目标项目、可用区、实例名、公网地址和预期代理端口，独立设置 `PROJECT`、`ZONE`、`VM`、`PORT`、`STATE` 和 `CLOUDSDK_CONFIG`（如第 2 节），用获授权的账号登录。从 `gcloud compute instances describe` 读回 `IP` 并与交付地址核对。执行[第 3 节的 SSH 函数和代码上传](#iap-upload)，跳过该段最后一行首次安装命令。为已有服务器增加客户端不需要创建项目、地址或实例。若只想验收已有客户端，可直接设置 `IP`、`PORT`、`DEVICE_ID`、`LABEL` 并将第 5 节的 `--delivery` 指向用户原有的私有交付文件。
+**从一台新的操作电脑管理已有服务器。** 若只导入已分配的订阅，跳过本段。向用户取得目标项目、可用区、实例名、公网地址和预期代理端口，独立设置 `PROJECT`、`ZONE`、`VM`、`PORT`、`STATE` 和 `CLOUDSDK_CONFIG`（如第 2 节），用获授权的账号登录。从 `gcloud compute instances describe` 读回 `IP` 并与交付地址核对。执行[第 3 节的 SSH 函数和代码上传](#iap-upload)，跳过该段最后三行的构建、二进制上传和首次安装命令。为已有服务器增加客户端不需要创建项目、地址或实例。若只想验收已有客户端，可直接设置 `IP`、`PORT`、`DEVICE_ID`、`LABEL` 并将第 5 节的 `--delivery` 指向用户原有的私有交付文件。
 
 **需要新槽位。** 对本仓库安装程序管理的服务器，通过已授权的同一 SSH 会话和已上传的发行目录执行下方命令。每台设备用唯一 ID 与显示名。现有设备刷新同一订阅即可看到新名称。对以前手工部署的服务器，优先使用已有空槽位；若所有槽位都在用，应先核对当前清单与运行配置，尤其是兼容监听端口，再决定迁移。直接覆盖旧配置会断开仍使用旧端口的设备。
 
@@ -155,3 +158,12 @@ python3 keel.py serve
 ```
 
 打开 `http://127.0.0.1:8765` 核对实例与 Grafana 入口。遇到登录、账单或网络问题时保留原始订阅和资源，先核对当前账号、项目和服务器地址；切换账号不要求清除其他账号的登录状态。
+
+## 7. 给已有 Outline 主机更新 TCP 采样
+
+适用于 Debian 13 amd64、现有服务名为 `keel-outline.service` 的主机。先用 `systemctl show keel-outline.service -p ExecStart` 核对二进制路径，并从 Grafana 的大盘 API 核对 `meta.provisionedExternalId`。旧部署的大盘文件可能叫 `outline.json`，安装器创建的文件叫 `keel-outline.json`。使用第 3 节的 SSH 函数，只上传新二进制与大盘。所有设备继续使用原订阅和密钥。
+
+1. 在操作电脑运行 `bash deploy/outline/tcpinfo/build.sh "$STATE/outline-ss-server"`。创建独立的远端暂存目录，上传该产物与 `deploy/outline/grafana-dashboard.json`。用 `sha256sum` 比对服务端产物与仓库中的 `deploy/outline/tcpinfo/build.sha256`。
+2. 保存原二进制与实际使用的大盘文件到 root 专用备份目录。记录原版本、哈希及本地指标中的 `shadowsocks_keys` 数量。准备恢复命令，部署期间用定时器执行自动回滚，验收成功后取消定时器。如果管理连接也经过这台代理，让更新过程在服务器上独立运行；重新连接后先核对实际服务与文件哈希。
+3. 在现有二进制所在目录暂存新版，验证哈希，再原子重命名到原路径并运行 `sudo systemctl restart keel-outline.service`。这会短暂断开已有 TCP 连接。核对服务恢复、密钥数一致，并确认 `shadowsocks_build_info` 报告 `1.9.2-keel-tcp1`。按同样方式原子替换现有大盘文件，让 Grafana 自动加载。
+4. 用一台已配置的客户端发起有流量上限的 TCP 下载，在下载进行中核实该设备密钥出现 `device` 和 `source` 两段 RTT、下载速率，以及设备段重传与发送积压。检查原订阅和各监听端口。失败时，将备份的原二进制和大盘原子恢复到各自的原路径，重启同一服务并复核版本与密钥数。

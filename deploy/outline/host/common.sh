@@ -124,7 +124,7 @@ require_sources() {
     local paths=(
         "$OUTLINE_DIR/enroll.py" "$OUTLINE_DIR/generate.py"
         "$OUTLINE_DIR/prometheus.example.yml" "$OUTLINE_DIR/grafana-datasource.yml"
-        "$OUTLINE_DIR/grafana-dashboard.json"
+        "$OUTLINE_DIR/grafana-dashboard.json" "$OUTLINE_DIR/tcpinfo/build.sha256"
         "$HOST_DIR/outline.service"
         "$HOST_DIR/grafana.conf" "$HOST_DIR/grafana-dashboards.yaml"
         "$HOST_DIR/prometheus.default" "$HOST_DIR/prometheus-node-exporter.default"

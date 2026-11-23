@@ -64,17 +64,22 @@ prometheus --config.file=/etc/prometheus/keel.yml \
 
 主机安装脚本会同时部署 [Node Exporter Full 模板 1860，第 45 版](https://grafana.com/grafana/dashboards/1860-node-exporter-full/)。手动配置时导入[同版模板](https://grafana.com/api/dashboards/1860/revisions/45/download)，选择 Keel Prometheus 数据源。从 Keel 顶部打开模板会保留当前时间范围。
 
-以下指标覆盖设备、主机、磁盘和网络。
+以下指标覆盖设备、TCP 链路、主机、磁盘和网络。
 
-- 设备筛选器和设备面板只展示所选时段内观察到客户端流量增长的密钥。活跃曲线保留中途空闲的时刻。采样缺失时，设备也可能不显示。
-- 速率以字节／秒显示，时段流量是该时间窗口内字节增量的估算值。
-- 仅使用 `shadowsocks_data_bytes` 的 `c>p` 与 `c<p` 方向以及 `tcp` 与 `udp` 协议，按 `access_key`、`dir`、`proto` 分组。排除服务端方向以避免重复计量。TCP 连接结束时才更新字节计数，长连接的流量可能延后显示为速率峰值。
+- 设备筛选器和 Outline 时段明细面板纳入在所选时段内历史 Outline 客户端流量或 `keel_tcp_download_bytes_total` 至少一项为正增量的密钥。首次长下载无需等待 Outline 关闭连接即可选中设备。活跃曲线保留中途空闲的时刻，但采样缺失仍可能导致设备不显示。
+- 所有面板使用 Grafana 原生所选时间范围，滚动速率使用 `$__rate_interval`。字节速率以字节／秒显示，RTT 以秒为单位，时段流量是所选时间窗口内字节增量的估算值。
+- 仅使用 `shadowsocks_data_bytes` 的 `c>p` 与 `c<p` 方向以及 `tcp` 与 `udp` 协议，按 `access_key`、`dir`、`proto` 分组。排除服务端方向以避免重复计量。这些 Outline TCP 字节计数器在连接结束时才更新，长连接的流量可能延后显示为速率峰值。
+- 原生“TCP 链路诊断”行按 `access_key` 筛选。RTT 和下载序列仅增加 `leg` 标签（`source` 或 `device`），不使用来源 IP 标签。实时平均 RTT 以 `keel_tcp_rtt_seconds_sum` 总和除以正的 `keel_tcp_rtt_samples` 总和；两个 gauge 都只描述当前打开的套接字。
+- 下载面板通过 `rate(keel_tcp_download_bytes_total)` 对比 source 链路从源站接收的 payload 与 device 链路已获客户端 ACK 的加密 TCP 字节。两者刻意采用不同的字节口径。
+- 重传面板通过 `rate(keel_tcp_device_retrans_bytes_total)` 显示 VPS 发往客户端的加密 TCP 重传字节。积压面板对 `keel_tcp_device_notsent_bytes` gauge 求和，显示同方向当前尚未发送的字节。采样缺失保持缺口，不补零。
 - 隧道时长按密钥和来源 IP 的活跃秒数估算，多个来源并发时可超过实际经过时间。TCP 关闭连接数按密钥和状态分组。
 - 主机面板不随 `device` 筛选，覆盖主机运行时长、可见 vCPU 与内存、除以可见 vCPU 数的 1／5／15 分钟负载、包含 iowait 与 steal 的 CPU 模式、可用内存、CPU／内存／IO PSI、OOM 终止以及根文件系统空间与 inode。
 - 磁盘面板分别显示读写吞吐、IOPS、以毫秒为单位的平均延迟和繁忙时间，不跨设备求和。通用过滤排除 loop、RAM、光驱、device-mapper、RAID、zram、NBD／RBD 及常见分区设备。窗口内对应读或写操作为零时省略该平均延迟序列，不伪造零值。
 - 网络面板保留每网卡收发速率，并增加非回环网卡错误／丢包、TCP 重传以及可用时的 TCP inuse／time-wait 套接字状态。
 - 协议健康面板展示 TCP 重传占比、SYN 重传、超时、监听溢出与丢弃，以及 UDP 数据报、缓冲区错误和 Outline UDP 映射增删速率。这些指标覆盖整台实例。
 - 不写死抓取 job 或 instance 值，也不为缺失序列补零；可选采集器缺失的数据保持“无数据”。仪表盘不虚构来源 IP 清单、操作系统或硬件型号及物理设备在场状态。
+
+当设备的发送队列有积压或重传字节在增加时，TCP 诊断仍保留该设备。RTT 是每次抓取时活跃连接的均值；短连接可能落在两次抓取之间，套接字关闭后才到达的 ACK 也可能超出最后一次采样。安装程序使用[审查过的 Outline 构建](./deploy/outline/tcpinfo/build.sh)。已有手工部署主机的升级步骤见[配置手册](./docs/agent-onboarding.md)。
 
 ## 本地虚拟机控制台
 
