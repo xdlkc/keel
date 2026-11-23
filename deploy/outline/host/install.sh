@@ -124,6 +124,11 @@ install -m 0644 "$HOST_DIR/prometheus-node-exporter.default" /etc/default/promet
 install -m 0644 "$OUTLINE_DIR/prometheus.example.yml" /etc/prometheus/prometheus.yml
 install -m 0644 "$OUTLINE_DIR/grafana-datasource.yml" /etc/grafana/provisioning/datasources/keel.yaml
 install -m 0644 "$HOST_DIR/grafana-dashboards.yaml" /etc/grafana/provisioning/dashboards/keel.yaml
+# Grafana community dashboard 1860, revision 45 (upstream UID rYdddlPWk).
+"${CURL[@]}" https://grafana.com/api/dashboards/1860/revisions/45/download -o "$WORK/node-exporter-full.json"
+printf '%s  node-exporter-full.json\n' 184c6b7409f306da75525d7772f71945b10cea23ad16b5d78c4698ea0ea51986 >"$WORK/dashboard.sha256"
+(cd "$WORK" && run_logged sha256sum -c dashboard.sha256)
+install -m 0644 "$WORK/node-exporter-full.json" /var/lib/keel-dashboards/node-exporter-full.json
 install -m 0644 "$OUTLINE_DIR/grafana-dashboard.json" /var/lib/keel-dashboards/keel-outline.json
 "${HOSTCTL[@]}" grafana-env "$PUBLIC_IPV4"
 "${HOSTCTL[@]}" publish-install "$WORK/generated"

@@ -20,8 +20,10 @@ class OutlineDashboardTests(unittest.TestCase):
         ]
         cls.expressions = [target["expr"] for target in cls.targets]
         cls.traffic_targets = [
-            target for target in cls.targets
-            if "shadowsocks_data_bytes" in target["expr"]
+            target
+            for panel in cls.visual_panels
+            if panel["title"] in {"设备上下行速率", "所选时段的设备流量"}
+            for target in panel.get("targets", [])
         ]
 
     def test_identity_datasource_and_device_filter(self):
@@ -35,9 +37,25 @@ class OutlineDashboardTests(unittest.TestCase):
         self.assertTrue(device["includeAll"])
         self.assertEqual(device["allValue"], ".+")
         self.assertEqual(device["datasource"], {"type": "prometheus", "uid": "keel-prom"})
-        self.assertEqual(device["query"]["query"], 'label_values({__name__=~"shadowsocks_data_bytes|shadowsocks_tunnel_time_seconds",access_key!=""}, access_key)')
+        query = device["query"]["query"]
+        self.assertEqual(device["definition"], query)
+        self.assertTrue(query.startswith("query_result("))
+        self.assertIn("sum by (access_key) (increase(shadowsocks_data_bytes{", query)
+        self.assertIn('access_key!=""', query)
+        self.assertIn('dir=~"^(c>p|c<p)$"', query)
+        self.assertIn('proto=~"^(tcp|udp)$"', query)
+        self.assertIn("[$__range] @ ${__to:date:seconds}", query)
+        self.assertTrue(query.endswith("> 0)"))
+        self.assertEqual(device["regex"], r'/.*access_key="([^"]+)".*/')
+        self.assertEqual(device["refresh"], 2)
         self.assertEqual(self.dashboard["title"], "Keel · 新加坡 VPS")
-        self.assertEqual(self.dashboard["links"], [])
+        self.assertEqual(len(self.dashboard["links"]), 1)
+        link = self.dashboard["links"][0]
+        self.assertEqual(link["title"], "Node Exporter Full")
+        self.assertEqual(link["type"], "link")
+        self.assertEqual(link["url"], "/d/rYdddlPWk/node-exporter-full")
+        self.assertTrue(link["keepTime"])
+        self.assertFalse(link["targetBlank"])
         self.assertTrue({1, 2, 3, 4, 5, 6, 7}.issubset({panel["id"] for panel in self.visual_panels}))
         for panel in self.visual_panels:
             self.assertEqual(panel["datasource"], {"type": "prometheus", "uid": "keel-prom"})
@@ -46,35 +64,32 @@ class OutlineDashboardTests(unittest.TestCase):
 
     def test_client_side_traffic_has_direction_protocol_and_no_double_count(self):
         self.assertEqual(len(self.traffic_targets), 2)
-        functions = set()
         for target in self.traffic_targets:
             expression = target["expr"]
-            self.assertEqual(expression.count("shadowsocks_data_bytes"), 1)
             self.assertIn('access_key=~"$device"', expression)
             self.assertIn('dir=~"^(c>p|c<p)$"', expression)
             self.assertIn('proto=~"^(tcp|udp)$"', expression)
             self.assertIn("sum by (access_key, dir, proto)", expression)
+            self.assertIn("[$__range] @ ${__to:date:seconds}", expression)
+            self.assertIn("> 0", expression)
             self.assertNotIn("p<t", expression)
             self.assertNotIn("p>t", expression)
             self.assertNotIn("server", expression)
             for label in ("{{access_key}}", "{{dir}}", "{{proto}}"):
                 self.assertIn(label, target["legendFormat"])
-            if "rate(" in expression:
-                functions.add("rate")
-                self.assertIn("[$__rate_interval]", expression)
-            if "increase(" in expression:
-                functions.add("increase")
-                self.assertIn("[$__range]", expression)
-        self.assertEqual(functions, {"rate", "increase"})
 
-        rate_panel = next(
-            panel for panel in self.panels
-            if any("rate(shadowsocks_data_bytes" in target["expr"] for target in panel.get("targets", []))
-        )
-        volume_panel = next(
-            panel for panel in self.panels
-            if any("increase(shadowsocks_data_bytes" in target["expr"] for target in panel.get("targets", []))
-        )
+        rate_panel = next(panel for panel in self.panels if panel["title"] == "设备上下行速率")
+        volume_panel = next(panel for panel in self.panels if panel["title"] == "所选时段的设备流量")
+        rate = rate_panel["targets"][0]["expr"]
+        volume = volume_panel["targets"][0]["expr"]
+        self.assertIn("rate(shadowsocks_data_bytes{", rate)
+        self.assertIn("[$__rate_interval]", rate)
+        self.assertEqual(rate.count("shadowsocks_data_bytes"), 2)
+        self.assertIn("and on(access_key, dir, proto)", rate)
+        self.assertEqual(rate.count('access_key=~"$device"'), 2)
+        self.assertEqual(volume.count("shadowsocks_data_bytes"), 1)
+        self.assertTrue(volume.endswith("> 0"))
+        self.assertNotIn("and on(", volume)
         self.assertEqual(rate_panel["fieldConfig"]["defaults"]["unit"], "Bps")
         self.assertEqual(volume_panel["fieldConfig"]["defaults"]["unit"], "bytes")
 
@@ -107,8 +122,16 @@ class OutlineDashboardTests(unittest.TestCase):
         self.assertIn("[$__range]", closed["expr"])
         self.assertIn("sum by (access_key, status)", closed["expr"])
         for target in (closed, tunnel):
+            expression = target["expr"]
             self.assertTrue(target["instant"])
             self.assertFalse(target["range"])
+            self.assertIn("and on(access_key)", expression)
+            self.assertIn("increase(shadowsocks_data_bytes{", expression)
+            self.assertIn('dir=~"^(c>p|c<p)$"', expression)
+            self.assertIn('proto=~"^(tcp|udp)$"', expression)
+            self.assertIn("[$__range] @ ${__to:date:seconds}", expression)
+            self.assertIn("> 0)", expression)
+            self.assertEqual(expression.count('access_key=~"$device"'), 2)
         self.assertIn("{{status}}", closed["legendFormat"])
         self.assertIn("{{access_key}}", closed["legendFormat"])
 
@@ -240,10 +263,49 @@ class OutlineDashboardTests(unittest.TestCase):
         self.assertIn("node_sockstat_TCP_inuse", socket_expression)
         self.assertIn("node_sockstat_TCP_tw", socket_expression)
 
+    def test_protocol_health_panels(self):
+        panels = {panel["title"]: panel for panel in self.visual_panels}
+
+        retrans_percent = panels["TCP 重传占比"]
+        self.assertEqual(retrans_percent["fieldConfig"]["defaults"]["unit"], "percent")
+        self.assertEqual(
+            retrans_percent["targets"][0]["expr"],
+            "100 * rate(node_netstat_Tcp_RetransSegs[$__rate_interval]) / "
+            "(rate(node_netstat_Tcp_OutSegs[$__rate_interval]) > 0)",
+        )
+        self.assertIn("避免除以零", retrans_percent["description"])
+
+        expected = {
+            "TCP SYN 重传与超时": (
+                "node_netstat_TcpExt_TCPSynRetrans",
+                "node_netstat_TcpExt_TCPTimeouts",
+            ),
+            "TCP 监听溢出与丢弃": (
+                "node_netstat_TcpExt_ListenOverflows",
+                "node_netstat_TcpExt_ListenDrops",
+            ),
+            "UDP 数据报与缓冲错误": (
+                "node_netstat_Udp_InDatagrams",
+                "node_netstat_Udp_OutDatagrams",
+                "node_netstat_Udp_RcvbufErrors",
+                "node_netstat_Udp_SndbufErrors",
+            ),
+            "Outline UDP NAT 增删": (
+                "shadowsocks_udp_nat_entries_added",
+                "shadowsocks_udp_nat_entries_removed",
+            ),
+        }
+        for title, metrics in expected.items():
+            panel = panels[title]
+            self.assertEqual(len(panel["targets"]), len(metrics))
+            for target, metric in zip(panel["targets"], metrics):
+                self.assertEqual(target["expr"], f"rate({metric}[$__rate_interval])")
+                self.assertNotIn("$device", target["expr"])
+
     def test_native_rows_and_grid_do_not_overlap(self):
         self.assertEqual(
             [panel["title"] for panel in self.panels if panel["type"] == "row"],
-            ["设备与密钥", "主机概览", "压力与磁盘", "网络与 TCP"],
+            ["设备与密钥", "主机概览", "压力与磁盘", "网络与 TCP", "协议健康"],
         )
         self.assertEqual(len({panel["id"] for panel in self.panels}), len(self.panels))
         occupied = []

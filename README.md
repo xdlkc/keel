@@ -62,15 +62,18 @@ Install the generated `outline.yml` as `/etc/keel-outline/outline.yml` with owne
 
 For Grafana on the same host, install [`grafana-datasource.yml`](./deploy/outline/grafana-datasource.yml) in its datasource provisioning directory. It creates a Prometheus datasource with UID `keel-prom` at `http://127.0.0.1:9090`. Import [`grafana-dashboard.json`](./deploy/outline/grafana-dashboard.json); its UID is `keel-outline`, so its normal path is `/d/keel-outline/keel-outline`. Use Grafana's existing login and an existing HTTPS reverse proxy for remote access; Keel adds no authentication or public metrics listener.
 
-The dashboard has native sections for device/key detail, host overview, pressure/disk, and network/TCP:
+The host installer provisions [Node Exporter Full, revision 45](https://grafana.com/grafana/dashboards/1860-node-exporter-full/) alongside Keel. For manual setup, import [the same revision](https://grafana.com/api/dashboards/1860/revisions/45/download) and select Keel Prometheus. The dashboard link opens the template with the current time range.
 
-- An All-enabled, multi-select `device` variable lists observed `access_key` values. Configured keys are not a physical-device inventory or a device count.
-- Client-side rates in bytes/second use `rate(...[$__rate_interval])`; estimated selected-range volume in bytes uses `increase(...[$__range])`.
+The device, host, disk, and network panels use these measurements.
+
+- The device picker and panels show keys with observed client-side traffic in the selected interval. An active series keeps its idle periods in the rate chart. A missing device can also indicate missing samples.
+- Rates use bytes per second. Volume shows the estimated byte increase during the selected interval.
 - Only `shadowsocks_data_bytes` directions `c>p` and `c<p`, and protocols `tcp` and `udp`, are grouped by `access_key`, `dir`, and `proto`. Server-side directions are excluded to avoid double counting. TCP byte counters update when a connection closes, so an ongoing transfer can appear later as a spike.
-- For selected non-empty authenticated keys, `increase(shadowsocks_tunnel_time_seconds{access_key=~"$device",access_key!=""}[$__range])` estimates tunnel time in seconds, and `shadowsocks_tcp_connections_closed` counts closed TCP connections by `access_key` and `status` over the selected range. The native tunnel counter sums active key/source-IP durations, so concurrent sources can accumulate more than wall-clock time; it is not physical device uptime, online status, or a last-seen indicator.
+- Tunnel time estimates active key/source-IP seconds. Concurrent connections from distinct source IPs can accumulate more than wall-clock time. TCP closes are grouped by key and status.
 - Host panels ignore `device`. They cover host uptime, visible vCPUs and RAM, 1/5/15-minute load divided by visible vCPUs, CPU modes including iowait and steal, memory available, CPU/memory/IO PSI, OOM kills, and root filesystem space and inodes.
 - Disk panels show separate read/write throughput, IOPS, mean latency in milliseconds, and busy time without summing devices. Generic filters exclude loop, RAM, optical, device-mapper, RAID, zram, NBD/RBD, and common partition devices. A mean read or write latency series is omitted when its window has zero corresponding operations rather than reporting a fake zero.
 - Network panels retain per-interface rates and add non-loopback errors/drops, TCP retransmits, and available TCP inuse/time-wait socket gauges.
+- Protocol-health panels add TCP retransmits as a percentage of sent segments with a positive-denominator guard, SYN retransmits and timeouts, listen overflows/drops, UDP datagrams and receive/send buffer errors, and Outline UDP NAT entry additions/removals. These are not per-device series.
 - No scrape job or instance value is hard-coded, and absent series receive no zero fallback; missing optional collector data stays “No data.” The dashboard does not invent source-IP inventories, OS or hardware models, or physical-device presence.
 
 ## Local VM console

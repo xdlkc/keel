@@ -62,15 +62,18 @@ prometheus --config.file=/etc/prometheus/keel.yml \
 
 对于同主机上的 Grafana，将 [`grafana-datasource.yml`](./deploy/outline/grafana-datasource.yml) 安装到其数据源 provisioning 目录。它创建 UID 为 `keel-prom`、地址为 `http://127.0.0.1:9090` 的 Prometheus 数据源。导入 [`grafana-dashboard.json`](./deploy/outline/grafana-dashboard.json)；仪表盘 UID 为 `keel-outline`，通常路径为 `/d/keel-outline/keel-outline`。远程访问应使用 Grafana 已有登录机制和现有 HTTPS 反向代理；Keel 不增加认证或公网指标监听器。
 
-仪表盘按设备与密钥、主机概览、压力与磁盘、网络与 TCP 划分为原生分区：
+主机安装脚本会同时部署 [Node Exporter Full 模板 1860，第 45 版](https://grafana.com/grafana/dashboards/1860-node-exporter-full/)。手动配置时导入[同版模板](https://grafana.com/api/dashboards/1860/revisions/45/download)，选择 Keel Prometheus 数据源。从 Keel 顶部打开模板会保留当前时间范围。
 
-- 支持 All 和多选的 `device` 变量列出指标中观察到的 `access_key`。配置密钥不等同于物理设备清单或设备数量。
-- 客户端速率使用 `rate(...[$__rate_interval])`，单位为字节／秒；所选时间范围的估算流量使用 `increase(...[$__range])`，单位为字节。
+以下指标覆盖设备、主机、磁盘和网络。
+
+- 设备筛选器和设备面板只展示所选时段内观察到客户端流量增长的密钥。活跃曲线保留中途空闲的时刻。采样缺失时，设备也可能不显示。
+- 速率以字节／秒显示，时段流量是该时间窗口内字节增量的估算值。
 - 仅使用 `shadowsocks_data_bytes` 的 `c>p` 与 `c<p` 方向以及 `tcp` 与 `udp` 协议，按 `access_key`、`dir`、`proto` 分组。排除服务端方向以避免重复计量。TCP 连接结束时才更新字节计数，长连接的流量可能延后显示为速率峰值。
-- 对筛选后的非空认证密钥，使用 `increase(shadowsocks_tunnel_time_seconds{access_key=~"$device",access_key!=""}[$__range])` 估算所选时段的隧道时长，单位为秒；使用 `shadowsocks_tcp_connections_closed` 按 `access_key` 和 `status` 统计所选时段内关闭的 TCP 连接。原生隧道计数器累加活动密钥／来源 IP 的持续时间，并发来源可使累计值超过墙钟时间；它不是物理设备开机时间、在线状态或最后出现时间。
+- 隧道时长按密钥和来源 IP 的活跃秒数估算，多个来源并发时可超过实际经过时间。TCP 关闭连接数按密钥和状态分组。
 - 主机面板不随 `device` 筛选，覆盖主机运行时长、可见 vCPU 与内存、除以可见 vCPU 数的 1／5／15 分钟负载、包含 iowait 与 steal 的 CPU 模式、可用内存、CPU／内存／IO PSI、OOM 终止以及根文件系统空间与 inode。
 - 磁盘面板分别显示读写吞吐、IOPS、以毫秒为单位的平均延迟和繁忙时间，不跨设备求和。通用过滤排除 loop、RAM、光驱、device-mapper、RAID、zram、NBD／RBD 及常见分区设备。窗口内对应读或写操作为零时省略该平均延迟序列，不伪造零值。
 - 网络面板保留每网卡收发速率，并增加非回环网卡错误／丢包、TCP 重传以及可用时的 TCP inuse／time-wait 套接字状态。
+- 协议健康面板展示 TCP 重传占比、SYN 重传、超时、监听溢出与丢弃，以及 UDP 数据报、缓冲区错误和 Outline UDP 映射增删速率。这些指标覆盖整台实例。
 - 不写死抓取 job 或 instance 值，也不为缺失序列补零；可选采集器缺失的数据保持“无数据”。仪表盘不虚构来源 IP 清单、操作系统或硬件型号及物理设备在场状态。
 
 ## 本地虚拟机控制台

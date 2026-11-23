@@ -7,7 +7,20 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "id": null,
-  "links": [],
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Node Exporter Full",
+      "tooltip": "Node Exporter Full 1860 rev45 · 主机详情",
+      "type": "link",
+      "url": "/d/rYdddlPWk/node-exporter-full"
+    }
+  ],
   "liveNow": false,
   "panels": [
     {
@@ -114,7 +127,7 @@
         "type": "prometheus",
         "uid": "keel-prom"
       },
-      "description": "c>p 为上传，c<p 为下载，单位为字节/秒。TCP 在连接结束时入账，长连接结束后可能出现峰值。",
+      "description": "c>p 为上传，c<p 为下载，单位为字节/秒。TCP 在连接结束时入账，长连接结束后可能出现峰值。仅展示所选时段内产生流量的方向与协议，曲线保留中途空闲的时刻。",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -195,7 +208,7 @@
             "uid": "keel-prom"
           },
           "editorMode": "code",
-          "expr": "sum by (access_key, dir, proto) (rate(shadowsocks_data_bytes{access_key=~\"$device\",dir=~\"^(c>p|c<p)$\",proto=~\"^(tcp|udp)$\"}[$__rate_interval]))",
+          "expr": "sum by (access_key, dir, proto) (rate(shadowsocks_data_bytes{access_key=~\"$device\",dir=~\"^(c>p|c<p)$\",proto=~\"^(tcp|udp)$\"}[$__rate_interval])) and on(access_key, dir, proto) (sum by (access_key, dir, proto) (increase(shadowsocks_data_bytes{access_key=~\"$device\",dir=~\"^(c>p|c<p)$\",proto=~\"^(tcp|udp)$\"}[$__range] @ ${__to:date:seconds})) > 0)",
           "legendFormat": "{{access_key}} · {{dir}} · {{proto}}",
           "range": true,
           "refId": "A"
@@ -209,7 +222,7 @@
         "type": "prometheus",
         "uid": "keel-prom"
       },
-      "description": "按设备、方向和协议估算所选时段的字节数。c>p 为上传，c<p 为下载。",
+      "description": "按设备、方向和协议估算所选时段结束时的字节增量，仅显示正增量。c>p 为上传，c<p 为下载。",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -261,7 +274,7 @@
             "uid": "keel-prom"
           },
           "editorMode": "code",
-          "expr": "sum by (access_key, dir, proto) (increase(shadowsocks_data_bytes{access_key=~\"$device\",dir=~\"^(c>p|c<p)$\",proto=~\"^(tcp|udp)$\"}[$__range]))",
+          "expr": "sum by (access_key, dir, proto) (increase(shadowsocks_data_bytes{access_key=~\"$device\",dir=~\"^(c>p|c<p)$\",proto=~\"^(tcp|udp)$\"}[$__range] @ ${__to:date:seconds})) > 0",
           "legendFormat": "{{access_key}} · {{dir}} · {{proto}}",
           "range": false,
           "refId": "A",
@@ -276,7 +289,7 @@
         "type": "prometheus",
         "uid": "keel-prom"
       },
-      "description": "increase 估算所选时段的隧道计数器增量。原生计数器累加活动密钥／来源 IP 的持续时间，多来源会重复累计墙钟时间；不是物理设备开机时间。仅统计筛选后的非空认证密钥。",
+      "description": "increase 估算所选时段的隧道计数器增量。原生计数器累加活动密钥／来源 IP 的持续时间，多来源会重复累计墙钟时间；不是物理设备开机时间。仅统计筛选后的非空认证密钥，仅显示同期有流量的设备。",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -328,7 +341,7 @@
             "uid": "keel-prom"
           },
           "editorMode": "code",
-          "expr": "sum by (access_key) (increase(shadowsocks_tunnel_time_seconds{access_key=~\"$device\",access_key!=\"\"}[$__range]))",
+          "expr": "sum by (access_key) (increase(shadowsocks_tunnel_time_seconds{access_key=~\"$device\",access_key!=\"\"}[$__range] @ ${__to:date:seconds})) and on(access_key) (sum by (access_key) (increase(shadowsocks_data_bytes{access_key=~\"$device\",access_key!=\"\",dir=~\"^(c>p|c<p)$\",proto=~\"^(tcp|udp)$\"}[$__range] @ ${__to:date:seconds})) > 0)",
           "legendFormat": "{{access_key}}",
           "range": false,
           "refId": "A",
@@ -343,7 +356,7 @@
         "type": "prometheus",
         "uid": "keel-prom"
       },
-      "description": "按状态统计所选时段内已关闭的 TCP 连接，仅包含筛选后的非空认证密钥；不是在线连接数。",
+      "description": "按状态统计所选时段内已关闭的 TCP 连接，仅包含筛选后的非空认证密钥，仅显示同期有流量的设备；不是在线连接数。",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -396,7 +409,7 @@
             "uid": "keel-prom"
           },
           "editorMode": "code",
-          "expr": "sum by (access_key, status) (increase(shadowsocks_tcp_connections_closed{access_key=~\"$device\",access_key!=\"\"}[$__range]))",
+          "expr": "sum by (access_key, status) (increase(shadowsocks_tcp_connections_closed{access_key=~\"$device\",access_key!=\"\"}[$__range] @ ${__to:date:seconds})) and on(access_key) (sum by (access_key) (increase(shadowsocks_data_bytes{access_key=~\"$device\",access_key!=\"\",dir=~\"^(c>p|c<p)$\",proto=~\"^(tcp|udp)$\"}[$__range] @ ${__to:date:seconds})) > 0)",
           "legendFormat": "{{access_key}} · {{status}}",
           "range": false,
           "refId": "A",
@@ -2362,6 +2375,481 @@
       ],
       "title": "TCP 套接字状态",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 100
+      },
+      "id": 104,
+      "panels": [],
+      "title": "协议健康",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keel-prom"
+      },
+      "description": "100 × Tcp RetransSegs 速率 ÷ Tcp OutSegs 速率；仅在发送速率大于零时显示，避免除以零。",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "percent",
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 4,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percent",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 101
+      },
+      "id": 27,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "keel-prom"
+          },
+          "editorMode": "code",
+          "expr": "100 * rate(node_netstat_Tcp_RetransSegs[$__rate_interval]) / (rate(node_netstat_Tcp_OutSegs[$__rate_interval]) > 0)",
+          "legendFormat": "{{instance}} · 重传／发送",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "TCP 重传占比",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keel-prom"
+      },
+      "description": "TcpExt TCPSynRetrans 与 TCPTimeouts 计数器的每秒增量；缺失序列保持无数据。",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "events/sec",
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 4,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "pps",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 101
+      },
+      "id": 28,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "keel-prom"
+          },
+          "editorMode": "code",
+          "expr": "rate(node_netstat_TcpExt_TCPSynRetrans[$__rate_interval])",
+          "legendFormat": "{{instance}} · SYN 重传",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "keel-prom"
+          },
+          "editorMode": "code",
+          "expr": "rate(node_netstat_TcpExt_TCPTimeouts[$__rate_interval])",
+          "legendFormat": "{{instance}} · 超时",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "TCP SYN 重传与超时",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keel-prom"
+      },
+      "description": "TcpExt ListenOverflows 与 ListenDrops 计数器的每秒增量，用于观察监听队列溢出和丢弃。",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "events/sec",
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 4,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "pps",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 101
+      },
+      "id": 29,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "keel-prom"
+          },
+          "editorMode": "code",
+          "expr": "rate(node_netstat_TcpExt_ListenOverflows[$__rate_interval])",
+          "legendFormat": "{{instance}} · 监听溢出",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "keel-prom"
+          },
+          "editorMode": "code",
+          "expr": "rate(node_netstat_TcpExt_ListenDrops[$__rate_interval])",
+          "legendFormat": "{{instance}} · 监听丢弃",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "TCP 监听溢出与丢弃",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keel-prom"
+      },
+      "description": "Udp 收发数据报及 RcvbufErrors／SndbufErrors 的每秒增量；缓冲错误不是应用丢包的完整计量。",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "datagrams/sec",
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 4,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "pps",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 108
+      },
+      "id": 30,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "keel-prom"
+          },
+          "editorMode": "code",
+          "expr": "rate(node_netstat_Udp_InDatagrams[$__rate_interval])",
+          "legendFormat": "{{instance}} · 接收数据报",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "keel-prom"
+          },
+          "editorMode": "code",
+          "expr": "rate(node_netstat_Udp_OutDatagrams[$__rate_interval])",
+          "legendFormat": "{{instance}} · 发送数据报",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "keel-prom"
+          },
+          "editorMode": "code",
+          "expr": "rate(node_netstat_Udp_RcvbufErrors[$__rate_interval])",
+          "legendFormat": "{{instance}} · 接收缓冲错误",
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "keel-prom"
+          },
+          "editorMode": "code",
+          "expr": "rate(node_netstat_Udp_SndbufErrors[$__rate_interval])",
+          "legendFormat": "{{instance}} · 发送缓冲错误",
+          "range": true,
+          "refId": "D"
+        }
+      ],
+      "title": "UDP 数据报与缓冲错误",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keel-prom"
+      },
+      "description": "Outline UDP NAT 表项新增与移除计数器的每秒增量；不是当前 NAT 表项数。",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "entries/sec",
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 4,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "ops",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 108
+      },
+      "id": 31,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "keel-prom"
+          },
+          "editorMode": "code",
+          "expr": "rate(shadowsocks_udp_nat_entries_added[$__rate_interval])",
+          "legendFormat": "{{instance}} · NAT 新增",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "keel-prom"
+          },
+          "editorMode": "code",
+          "expr": "rate(shadowsocks_udp_nat_entries_removed[$__rate_interval])",
+          "legendFormat": "{{instance}} · NAT 移除",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "Outline UDP NAT 增删",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
@@ -2388,8 +2876,8 @@
           "type": "prometheus",
           "uid": "keel-prom"
         },
-        "definition": "label_values({__name__=~\"shadowsocks_data_bytes|shadowsocks_tunnel_time_seconds\",access_key!=\"\"}, access_key)",
-        "description": "按 access_key 筛选；配置密钥不等同于物理设备。",
+        "definition": "query_result(sum by (access_key) (increase(shadowsocks_data_bytes{access_key!=\"\",dir=~\"^(c>p|c<p)$\",proto=~\"^(tcp|udp)$\"}[$__range] @ ${__to:date:seconds})) > 0)",
+        "description": "按 access_key 筛选，仅列出所选时段客户端 TCP/UDP 字节增量为正的密钥；配置密钥不等同于物理设备。",
         "hide": 0,
         "includeAll": true,
         "label": "设备",
@@ -2397,11 +2885,11 @@
         "name": "device",
         "options": [],
         "query": {
-          "query": "label_values({__name__=~\"shadowsocks_data_bytes|shadowsocks_tunnel_time_seconds\",access_key!=\"\"}, access_key)",
+          "query": "query_result(sum by (access_key) (increase(shadowsocks_data_bytes{access_key!=\"\",dir=~\"^(c>p|c<p)$\",proto=~\"^(tcp|udp)$\"}[$__range] @ ${__to:date:seconds})) > 0)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,
-        "regex": "",
+        "regex": "/.*access_key=\"([^\"]+)\".*/",
         "skipUrlSync": false,
         "sort": 1,
         "type": "query"
