@@ -1,13 +1,16 @@
 # 从干净的客户端或 Google 账号接入 Keel
 
-入口是仓库根目录的 [AGENTS.md](../AGENTS.md)。以下命令供有该私有仓库读取权限的 agent 在 Linux 或 macOS 的 Bash 中运行。操作者电脑需要 Git、Python 3.9+、GitHub CLI；管理云资源时还需 Google Cloud CLI。用有权读取私有仓库的身份执行 `gh auth status`（首次可用 `gh auth login`），再执行 `gh repo clone xdlkc/keel` 和 `cd keel`。服务器无需登录 GitHub。每个新 Google 账号使用独立的本地目录与 CLI 登录会话。
+入口是仓库根目录的 [AGENTS.md](../AGENTS.md)。以下命令供 agent 或操作者在 Linux 或 macOS 的 Bash 中运行。操作者电脑需要 Git、Python 3.9+；首次构建服务端二进制需要 Go 1.21+；管理云资源时需要 Google Cloud CLI（`gcloud`）。克隆仓库执行 `git clone https://github.com/xdlkc/keel.git && cd keel`（或 `gh repo clone xdlkc/keel && cd keel`）。服务器无需登录 GitHub。每个新 Google 账号使用独立的本地目录与 CLI 登录会话。
+
+> **当前生产架构提示（2026-11-24）**：线上主力环境已升级为「双节点 443 TLS（Trojan + WebSocket）+ 独立域名 90 天常规证书 + 统一双节点机场式 Clash 订阅」架构（`sg-vps-01` + `us-vps-01`），完整拓扑、服务清单与日常运维见 [双节点 443 TLS 架构与运维手册](./tls-443-architecture.md) 及 [`deploy/tls-gateway/`](../deploy/tls-gateway/)。**请勿对已升级的 443 TLS 主机直接执行本手册中的旧版裸 IP／18443 `install.sh`、`add-client.sh` 或未改造的 `generate.py`**，以免覆盖 `/etc/nginx/sites-available/keel` 与 `/var/lib/keel-sub/profile.yaml`。
 
 ## 1. 先判断接入哪台服务器
 
 | 手头的条件 | 路径 |
 | --- | --- |
-| 新手机或电脑，继续使用原服务器 | 进入第 4 节。只需已有订阅及一个未分配的槽位，无需登录 Google 或创建项目。 |
-| 新 Google 账号，要独立部署服务器 | 完成第 2、3 节，再完成客户端导入和第 5 节验收。新账号使用自己的账单、订阅密钥与 Grafana 账号。 |
+| 运维或接入已升级的双节点 443 TLS 线上环境（`sg-vps-01`／`us-vps-01`） | 进入 [双节点 443 TLS 架构与运维手册](./tls-443-architecture.md)。 |
+| 新手机或电脑，继续使用原服务器 | 进入第 4 节（或使用统一双节点域名订阅）。只需已有订阅及对应凭据／槽位，无需登录 Google 或创建项目。 |
+| 新 Google 账号，要独立部署单机 Outline 服务器 | 完成第 2、3 节，再完成客户端导入和第 5 节验收。新账号使用自己的账单、订阅密钥与 Grafana 账号。 |
 | 新客户端还要管理实例启停 | 代理连接验收后，按第 6 节配置本地 Keel。实例管理使用另行授权的 Google 身份。 |
 
 登记目标账号、项目、区域、实例名、设备 ID（例如 `phone-2`）、显示名（例如「手机 2」）和已有槽位分配。真实订阅、密钥、验证码和密码只放用户的密码管理器或私有交付文件。订阅包含全部槽位密钥，仅分发给同一信任范围内的设备。持有人可选任一槽位，两台设备选同一槽位会合并统计。
@@ -111,7 +114,7 @@ ssh_vm "sudo bash $(quote_args "$remote_dir/deploy/outline/host/install.sh" "$IP
 
 **从一台新的操作电脑管理已有服务器。** 若只导入已分配的订阅，跳过本段。向用户取得目标项目、可用区、实例名、公网地址和预期代理端口，独立设置 `PROJECT`、`ZONE`、`VM`、`PORT`、`STATE` 和 `CLOUDSDK_CONFIG`（如第 2 节），用获授权的账号登录。从 `gcloud compute instances describe` 读回 `IP` 并与交付地址核对。执行[第 3 节的 SSH 函数和代码上传](#iap-upload)，跳过该段最后三行的构建、二进制上传和首次安装命令。为已有服务器增加客户端不需要创建项目、地址或实例。若只想验收已有客户端，可直接设置 `IP`、`PORT`、`DEVICE_ID`、`LABEL` 并将第 5 节的 `--delivery` 指向用户原有的私有交付文件。
 
-**需要新槽位。** 对本仓库安装程序管理的服务器，通过已授权的同一 SSH 会话和已上传的发行目录执行下方命令。每台设备用唯一 ID 与显示名。现有设备刷新同一订阅即可看到新名称。对以前手工部署的服务器，优先使用已有空槽位；若所有槽位都在用，应先核对当前清单与运行配置，尤其是兼容监听端口，再决定迁移。直接覆盖旧配置会断开仍使用旧端口的设备。
+**需要新槽位。** 仅适用于本仓库旧版单机安装程序管理的服务器（**切勿在已升级双节点 443 TLS 网关与统一域名订阅的主机上运行，详见[双节点 443 TLS 架构与运维手册](./tls-443-architecture.md)**）。通过已授权的同一 SSH 会话和已上传的发行目录执行下方命令。每台设备用唯一 ID 与显示名。现有设备刷新同一订阅即可看到新名称。对以前手工部署的服务器，优先使用已有空槽位；若所有槽位都在用，应先核对当前清单与运行配置，尤其是兼容监听端口，再决定迁移。直接覆盖旧配置会断开仍使用旧端口的设备。
 
 ```bash
 DEVICE_ID=phone-2

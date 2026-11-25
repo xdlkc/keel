@@ -1,0 +1,115 @@
+# Sanitized unified dual-node Clash/Mihomo subscription template.
+# Deploy rendered output (mode 0640, root:www-data) to /var/lib/keel-sub/profile.yaml
+# on both primary (sg) and standby (us) hosts. Never commit real passwords, tokens,
+# or production subscription URLs.
+#
+# Production builds expand the split-routing rules section below to the full 134-rule set
+# while preserving the exact precedence order shown here.
+
+mixed-port: 7890
+allow-lan: false
+mode: rule
+log-level: info
+ipv6: false
+
+profile:
+  store-selected: true
+  store-fake-ip: false
+
+proxies:
+  - name: "新加坡 01"
+    type: trojan
+    server: sg.example.com
+    port: 443
+    password: REPLACE_WITH_SG_TROJAN_PASSWORD
+    sni: sg.example.com
+    udp: true
+    skip-cert-verify: false
+    network: ws
+    ws-opts:
+      path: /keel/mobile-ws
+      headers:
+        Host: sg.example.com
+
+  - name: "美国 01"
+    type: trojan
+    server: us.example.com
+    port: 443
+    password: REPLACE_WITH_US_TROJAN_PASSWORD
+    sni: us.example.com
+    udp: true
+    skip-cert-verify: false
+    network: ws
+    ws-opts:
+      path: /keel/mobile-ws
+      headers:
+        Host: us.example.com
+
+proxy-groups:
+  - name: "🚀 节点选择"
+    type: select
+    proxies:
+      - "🛟 故障转移 (新加坡优先)"
+      - "♻️ 自动测速"
+      - "新加坡 01"
+      - "美国 01"
+
+  - name: "🛟 故障转移 (新加坡优先)"
+    type: fallback
+    url: https://www.gstatic.com/generate_204
+    interval: 180
+    proxies:
+      - "新加坡 01"
+      - "美国 01"
+
+  - name: "♻️ 自动测速"
+    type: url-test
+    url: https://www.gstatic.com/generate_204
+    interval: 300
+    tolerance: 50
+    proxies:
+      - "新加坡 01"
+      - "美国 01"
+
+rules:
+  # 1. Own domain and both VPS public IPs direct (prevent TUN/proxy loops)
+  - DOMAIN-SUFFIX,example.com,DIRECT
+  - IP-CIDR,203.0.113.10/32,DIRECT,no-resolve
+  - IP-CIDR,203.0.113.20/32,DIRECT,no-resolve
+
+  # 2. Private / link-local ranges direct
+  - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
+  - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
+  - IP-CIDR,169.254.0.0/16,DIRECT,no-resolve
+  - IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
+  - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
+
+  # 3. Common overseas services via proxy (abbreviated; production carries full list)
+  - DOMAIN-SUFFIX,google.com,🚀 节点选择
+  - DOMAIN-SUFFIX,googleapis.com,🚀 节点选择
+  - DOMAIN-SUFFIX,gstatic.com,🚀 节点选择
+  - DOMAIN-SUFFIX,youtube.com,🚀 节点选择
+  - DOMAIN-SUFFIX,github.com,🚀 节点选择
+  - DOMAIN-SUFFIX,githubusercontent.com,🚀 节点选择
+  - DOMAIN-SUFFIX,openai.com,🚀 节点选择
+  - DOMAIN-SUFFIX,chatgpt.com,🚀 节点选择
+  - DOMAIN-SUFFIX,anthropic.com,🚀 节点选择
+  - DOMAIN-SUFFIX,claude.ai,🚀 节点选择
+  - DOMAIN-SUFFIX,x.com,🚀 节点选择
+  - DOMAIN-SUFFIX,twitter.com,🚀 节点选择
+  - DOMAIN-SUFFIX,telegram.org,🚀 节点选择
+  - DOMAIN-SUFFIX,t.me,🚀 节点选择
+
+  # 4. Domestic domains and LAN/CN GeoIP direct (abbreviated; production carries full list)
+  - DOMAIN-SUFFIX,cn,DIRECT
+  - DOMAIN-SUFFIX,baidu.com,DIRECT
+  - DOMAIN-SUFFIX,qq.com,DIRECT
+  - DOMAIN-SUFFIX,weixin.qq.com,DIRECT
+  - DOMAIN-SUFFIX,taobao.com,DIRECT
+  - DOMAIN-SUFFIX,jd.com,DIRECT
+  - DOMAIN-SUFFIX,bilibili.com,DIRECT
+  - GEOIP,LAN,DIRECT
+  - GEOIP,CN,DIRECT
+
+  # 5. Fallback
+  - MATCH,🚀 节点选择

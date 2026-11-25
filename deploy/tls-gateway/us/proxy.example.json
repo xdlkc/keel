@@ -1,0 +1,39 @@
+{
+  "log": {
+    "level": "warn",
+    "timestamp": true
+  },
+  "inbounds": [
+    {
+      "type": "trojan",
+      "tag": "trojan-ws-in",
+      "listen": "127.0.0.1",
+      "listen_port": 19080,
+      "users": [
+        {
+          "name": "us-standby",
+          "password": "REPLACE_WITH_UNIQUE_US_TROJAN_PASSWORD"
+        }
+      ],
+      "transport": {
+        "type": "ws",
+        "path": "/keel/mobile-ws"
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "ip_is_private": true,
+        "action": "reject"
+      }
+    ],
+    "final": "direct"
+  }
+}

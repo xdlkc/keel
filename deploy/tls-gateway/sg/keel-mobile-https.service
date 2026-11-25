@@ -1,0 +1,31 @@
+[Unit]
+Description=Keel 443 Trojan-WS gateway to loopback Outline (sing-box)
+Wants=network-online.target keel-outline.service
+After=network-online.target keel-outline.service
+
+[Service]
+Type=simple
+DynamicUser=yes
+User=keelmobile
+Group=keelmobile
+LoadCredential=gateway:/etc/keel-outline/mobile-gateway.json
+ExecStart=/opt/keel-mobile/bin/sing-box run -c %d/gateway
+Restart=on-failure
+RestartSec=2s
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictSUIDSGID=yes
+LockPersonality=yes
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+[Install]
+WantedBy=multi-user.target

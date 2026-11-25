@@ -1,0 +1,10 @@
+{
+  "node": "us-vps-01",
+  "state_dir": "/var/lib/keel-quota",
+  "total_limit_gib": 200,
+  "local_limit_gib": 190,
+  "peer_sync_url": "https://sg.example.com/metrics-sync/REPLACE_WITH_256_BIT_SYNC_TOKEN.json",
+  "proxy_services": [
+    "keel-us-proxy.service"
+  ]
+}

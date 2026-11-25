@@ -19,6 +19,11 @@ delivery.json
 access.json
 iap_key
 iap_key.pub
+mobile-gateway.json
+proxy.json
+profile.yaml
+sync.json
+deploy/tls-gateway/quota/*.local.json
 
 # Operator-built Linux release artifact
 /deploy/outline/host/outline-ss-server-linux-amd64

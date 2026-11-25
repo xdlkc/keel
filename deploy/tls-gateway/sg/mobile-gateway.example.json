@@ -1,0 +1,101 @@
+{
+  "log": {
+    "level": "warn",
+    "timestamp": true
+  },
+  "inbounds": [
+    {
+      "type": "trojan",
+      "tag": "trojan-ws-in",
+      "listen": "127.0.0.1",
+      "listen_port": 19080,
+      "users": [
+        {
+          "name": "computer-1",
+          "password": "REPLACE_WITH_UNIQUE_TROJAN_PASSWORD_COMPUTER_1"
+        },
+        {
+          "name": "phone-1",
+          "password": "REPLACE_WITH_UNIQUE_TROJAN_PASSWORD_PHONE_1"
+        },
+        {
+          "name": "computer-2",
+          "password": "REPLACE_WITH_UNIQUE_TROJAN_PASSWORD_COMPUTER_2"
+        },
+        {
+          "name": "phone-2",
+          "password": "REPLACE_WITH_UNIQUE_TROJAN_PASSWORD_PHONE_2"
+        }
+      ],
+      "transport": {
+        "type": "ws",
+        "path": "/keel/mobile-ws"
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "shadowsocks",
+      "tag": "outline-computer-1",
+      "server": "127.0.0.1",
+      "server_port": 18443,
+      "method": "chacha20-ietf-poly1305",
+      "password": "REPLACE_WITH_OUTLINE_SECRET_COMPUTER_1"
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "outline-phone-1",
+      "server": "127.0.0.1",
+      "server_port": 18382,
+      "method": "chacha20-ietf-poly1305",
+      "password": "REPLACE_WITH_OUTLINE_SECRET_PHONE_1"
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "outline-computer-2",
+      "server": "127.0.0.1",
+      "server_port": 18443,
+      "method": "chacha20-ietf-poly1305",
+      "password": "REPLACE_WITH_OUTLINE_SECRET_COMPUTER_2"
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "outline-phone-2",
+      "server": "127.0.0.1",
+      "server_port": 18443,
+      "method": "chacha20-ietf-poly1305",
+      "password": "REPLACE_WITH_OUTLINE_SECRET_PHONE_2"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "auth_user": [
+          "computer-1"
+        ],
+        "outbound": "outline-computer-1"
+      },
+      {
+        "auth_user": [
+          "phone-1"
+        ],
+        "outbound": "outline-phone-1"
+      },
+      {
+        "auth_user": [
+          "computer-2"
+        ],
+        "outbound": "outline-computer-2"
+      },
+      {
+        "auth_user": [
+          "phone-2"
+        ],
+        "outbound": "outline-phone-2"
+      },
+      {
+        "action": "reject"
+      }
+    ]
+  }
+}

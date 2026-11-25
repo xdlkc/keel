@@ -8,6 +8,16 @@ Keel 是一个中文优先的本地控制台，用于管理一台现有 Google C
 
 新设备接入或新 Google 账号独立部署，请从 [AGENTS.md](./AGENTS.md) 进入[配置手册](./docs/agent-onboarding.md)。手册覆盖赠金核验、独立的 Google Cloud 登录环境、新加坡实例、HTTPS 订阅交付和客户端流量验证。全新的 Debian 13 x86-64 主机可用安装脚本配置 Outline、Prometheus 与需要登录的 Grafana。已有空槽位可直接分配，在脚本管理的主机上也可以新增槽位。普通代理客户端只需要共享订阅和分配给它的设备名。
 
+## 双节点 443 TLS 架构
+
+当前生产环境已从单机裸 Shadowsocks 高端口（`18443`）与 6 天 IP 证书升级为双节点 `443` TLS（Trojan + WebSocket）架构，并全面采用 90 天常规 Let's Encrypt ECDSA 域名证书。完整拓扑、主机路径与运维手册见 [双节点 443 TLS 架构与运维手册](./docs/tls-443-architecture.md)，脱敏配置模板位于 [`deploy/tls-gateway/`](./deploy/tls-gateway/)。
+
+- **新加坡主力节点（`sg`）**：`nginx` 在 `80` 端口仅开放 ACME HTTP-01，在 `443` 端口将 `/keel/mobile-ws` 反代至仅监听回环的 `sing-box` 网关（`127.0.0.1:19080`，systemd 加固 `IPAddressDeny=any` 与 `IPAddressAllow=localhost`）。4 台设备（`computer-1`、`phone-1`、`computer-2`、`phone-2`）按 `auth_user` 分别路由至本机回环 `outline-ss-server` 出站，完整保留 Grafana 按设备流量与 TCP 链路诊断指标。独立订阅域名仅放行精确匹配的 256-bit 随机路径（`access_log off`、`Cache-Control: private, no-store`、`X-Robots-Tag: noindex, nofollow`），主力域名根路径 `/` 托管 Grafana。
+- **美国俄勒冈备用节点（`us`）**：采用 GCP Always Free `e2-micro` 与 `STANDARD` 网络层级（前 200 GiB／月免出站流量费），对外仅放行 `80`/`443`（及 SSH），不暴露任何明文／裸代理端口。`nginx` 将 `/keel/mobile-ws` 反代至本机 `sing-box`（`direct` 出站并启用 `ip_is_private` 拒绝规则阻断私有网段与 `169.254.169.254` 元数据访问），同时镜像托管同一份 Clash 订阅，并启用 TCP BBR 与 `100M` 的 `journald` 日志上限。
+- **统一双节点 Clash 订阅与动态流量条**：两机镜像维护 `/var/lib/keel-sub/profile.yaml`，由回环 `keel-sub-server`（`127.0.0.1:19090`，`www-data`）经 nginx 精确路径反代输出，客户端仅暴露 `新加坡 01` 与 `美国 01` 两个逻辑节点，内置 `🚀 节点选择`、新加坡优先的 `🛟 故障转移 (新加坡优先)`、`♻️ 自动测速`、国内外分流规则，并实时附加 `subscription-userinfo` 与 `profile-update-interval: 12` 响应头。
+- **月度出站计量与自动熔断**：两机通过 `/usr/local/bin/keel-quota` 与 `keel-quota.timer`（每 `60s`）读取默认网卡 `/proc/net/dev` 出站字节（状态持久化在 `/var/lib/keel-quota/`，配置在 `0600` 的 `/etc/keel-quota/config.json`），经 HTTPS `/metrics-sync/<256-bit-token>.json` 每分钟互相同步月度用量。双机合并达 `200 GiB／月`（美国备用机另设本机 `190 GiB／月` 硬上限）时仅停止代理服务，不影响 SSH、nginx、Grafana 与证书续签；每月 1 日 `00:00 UTC` 自动清零并恢复代理。
+- **简化换 IP 与防覆盖提醒**：任一节点更换临时公网 IP 后只需更新 DNS `A` 记录，90 天域名证书与客户端订阅地址均无需修改。**切勿直接对已升级的 `443` TLS 主机运行 `deploy/outline/` 下的旧版裸 IP／高端口安装脚本或 `generate.py` 覆盖配置**。
+
 ## 前置条件
 
 - Python 3.9 或更高版本，无需 pip 依赖。
@@ -147,8 +157,11 @@ python3 -m unittest discover -s tests -v
 - [`keel.py`](./keel.py)：虚拟机命令行入口。
 - [`keel/`](./keel/)：配置、受保护的 gcloud 操作、指标和本地 HTTP 服务。
 - [`keel/static/`](./keel/static/)：精简后的中文控制台。
-- [`deploy/outline/generate.py`](./deploy/outline/generate.py)：离线清单生成器。
-- [`deploy/outline/`](./deploy/outline/)：清单、Prometheus、Grafana 数据源与仪表盘文件。
+- [`docs/tls-443-architecture.md`](./docs/tls-443-architecture.md)：双节点 443 TLS 架构、DNS 拓扑、统一 Clash 订阅、月度计量与自动熔断及运维手册。
+- [`docs/agent-onboarding.md`](./docs/agent-onboarding.md)：Google Cloud 与单机 Outline 接入／安装手册。
+- [`deploy/tls-gateway/`](./deploy/tls-gateway/)：双节点 443 TLS 架构的脱敏 nginx、sing-box、systemd、sysctl、journald、计量／订阅服务与统一 Clash 订阅模板。
+- [`deploy/outline/generate.py`](./deploy/outline/generate.py)：离线 Outline 清单生成器（旧版裸 Shadowsocks 布局）。
+- [`deploy/outline/`](./deploy/outline/)：清单、Prometheus、Grafana 数据源、仪表盘与旧版主机安装脚本。
 - [`tests/`](./tests/)：离线回归测试。
 
 旧 `keel/traffic.py`、`keel/traffic_server.py` 和 `deploy/keel-traffic-*.service` 文件仅供手动旧版回滚；当前界面不链接或宣传这些文件。

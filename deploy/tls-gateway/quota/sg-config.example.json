@@ -1,0 +1,11 @@
+{
+  "node": "sg-vps-01",
+  "state_dir": "/var/lib/keel-quota",
+  "total_limit_gib": 200,
+  "local_limit_gib": null,
+  "peer_sync_url": "https://us.example.com/metrics-sync/REPLACE_WITH_256_BIT_SYNC_TOKEN.json",
+  "proxy_services": [
+    "keel-mobile-https.service",
+    "keel-outline.service"
+  ]
+}

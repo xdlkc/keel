@@ -1,0 +1,9 @@
+[Unit]
+Description=Renew the Keel domain TLS certificate on the US standby host
+After=network-online.target nginx.service
+Wants=network-online.target
+Requires=nginx.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/keel-certbot/bin/certbot renew --quiet --cert-name keel-us-domain --deploy-hook "/usr/bin/systemctl reload nginx"

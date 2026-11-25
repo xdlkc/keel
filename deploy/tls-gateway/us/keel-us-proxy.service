@@ -1,0 +1,29 @@
+[Unit]
+Description=Keel US standby 443 Trojan-WS proxy (sing-box)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+User=keelusproxy
+Group=keelusproxy
+LoadCredential=proxy:/etc/keel-us/proxy.json
+ExecStart=/opt/keel-mobile/bin/sing-box run -c %d/proxy
+Restart=on-failure
+RestartSec=2s
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

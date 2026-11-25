@@ -1,0 +1,8 @@
+[Unit]
+Description=Keel monthly egress metering and auto circuit breaker
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/keel-quota

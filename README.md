@@ -8,6 +8,16 @@ Keel is a Chinese-first local console for one existing Google Compute Engine VM,
 
 For a new client or a new Google account, start at [AGENTS.md](./AGENTS.md) and follow the [operator runbook](./docs/agent-onboarding.md). It covers credit verification, an isolated Google Cloud login, a dedicated Singapore VM, HTTPS subscription delivery and a client traffic check. On a fresh Debian 13 x86-64 host, the explicit installer configures Outline, Prometheus and authenticated Grafana. Reuse a free device slot or add a new one on an installer-managed host. Ordinary clients only need the shared subscription and their assigned slot.
 
+## Dual-node 443 TLS architecture
+
+The live production deployment has moved from a single bare-Shadowsocks high port (`18443`) and 6-day IP certificate to a dual-node `443` TLS (Trojan + WebSocket) architecture backed by 90-day Let's Encrypt ECDSA domain certificates. Full topology, host paths, and operations procedures live in [docs/tls-443-architecture.md](./docs/tls-443-architecture.md), with sanitized templates in [`deploy/tls-gateway/`](./deploy/tls-gateway/).
+
+- **Primary Singapore node (`sg`)**: `nginx` serves ACME HTTP-01 on port `80` and TLS on port `443`, proxying `/keel/mobile-ws` to a loopback-only `sing-box` gateway (`127.0.0.1:19080`, hardened with `IPAddressDeny=any` and `IPAddressAllow=localhost`). Four Trojan users (`computer-1`, `phone-1`, `computer-2`, `phone-2`) are routed by `auth_user` to loopback `outline-ss-server` outbounds so per-device Grafana and TCP leg metrics remain intact. A dedicated subscription hostname serves only the exact 256-bit random token path (`access_log off`, `Cache-Control: private, no-store`, `X-Robots-Tag: noindex, nofollow`), while `/` on the primary hostname serves Grafana.
+- **Standby US Oregon node (`us`)**: a lightweight Always Free `e2-micro` host on the `STANDARD` network tier (200 GiB/month free egress) exposing only ports `80`/`443` (and SSH) with no bare proxy ports. `nginx` proxies `/keel/mobile-ws` to loopback `sing-box` (`direct` outbound with `ip_is_private` rejection to block RFC1918 and `169.254.169.254` metadata) and mirrors the same Clash subscription file, with TCP BBR enabled and `journald` capped at `100M`.
+- **Unified dual-node Clash subscription**: both hosts mirror `/var/lib/keel-sub/profile.yaml`, served via loopback `keel-sub-server` (`127.0.0.1:19090`, `www-data`) behind nginx's exact token path. It exposes only two logical nodes (`新加坡 01` and `美国 01`) with `🚀 节点选择`, Singapore-first `🛟 故障转移 (新加坡优先)`, `♻️ 自动测速`, split-routing rules, and live `subscription-userinfo` + `profile-update-interval: 12` headers for the Clash traffic bar.
+- **Monthly egress metering and auto circuit breaker**: both hosts run `/usr/local/bin/keel-quota` every 60 seconds (`keel-quota.timer`) against default-interface `/proc/net/dev` outbound bytes (persisted in `/var/lib/keel-quota/`, configured via mode `0600` `/etc/keel-quota/config.json`) and exchange monthly totals over HTTPS `/metrics-sync/<256-bit-token>.json`. Exceeding `200 GiB/month` combined—or `190 GiB/month` locally on the US standby host—stops only the proxy services while keeping SSH, nginx, Grafana, and certificate renewal running, then resets and restarts proxies automatically on the 1st of each month at `00:00 UTC`.
+- **Simplified IP rotation and safety guardrail**: rotating an ephemeral public IP only requires updating DNS `A` records—90-day domain certificates and client subscription URLs remain valid. Do **not** run the legacy bare-IP / high-port installer or `generate.py` overwrite path in `deploy/outline/` directly against upgraded `443` TLS hosts.
+
 ## Requirements
 
 - Python 3.9 or newer; no pip packages.
@@ -147,8 +157,11 @@ Tests use local fakes, temporary files, and loopback HTTP servers only. They do 
 - [`keel.py`](./keel.py): VM CLI entry point.
 - [`keel/`](./keel/): configuration, guarded gcloud actions, metrics, and local HTTP server.
 - [`keel/static/`](./keel/static/): streamlined Chinese console.
-- [`deploy/outline/generate.py`](./deploy/outline/generate.py): offline inventory generator.
-- [`deploy/outline/`](./deploy/outline/): inventory, Prometheus, Grafana datasource, and dashboard artifacts.
+- [`docs/tls-443-architecture.md`](./docs/tls-443-architecture.md): dual-node 443 TLS architecture, DNS topology, unified Clash subscription, monthly quota/circuit-breaker, and operations guide.
+- [`docs/agent-onboarding.md`](./docs/agent-onboarding.md): Google Cloud and single-host Outline operator onboarding runbook.
+- [`deploy/tls-gateway/`](./deploy/tls-gateway/): sanitized nginx, sing-box, systemd, sysctl, journald, quota/sub-server, and unified Clash templates for the dual-node 443 TLS stack.
+- [`deploy/outline/generate.py`](./deploy/outline/generate.py): offline Outline inventory generator (legacy bare-Shadowsocks layout).
+- [`deploy/outline/`](./deploy/outline/): inventory, Prometheus, Grafana datasource, dashboard, and legacy host installer artifacts.
 - [`tests/`](./tests/): offline regression tests.
 
 The previous `keel/traffic.py`, `keel/traffic_server.py`, and `deploy/keel-traffic-*.service` files remain solely for manual legacy rollback; they are not linked or advertised by the current UI.
